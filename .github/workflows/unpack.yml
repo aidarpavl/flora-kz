@@ -1,0 +1,20 @@
+name: Распаковка проекта из архива
+on:
+  push:
+    paths: ["flora-kz-src.zip"]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  unpack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          unzip -o flora-kz-src.zip -x '.github/*'
+          git rm -q flora-kz-src.zip
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Распаковка проекта Флора Казахстана"
+          git push
