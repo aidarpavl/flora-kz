@@ -1,0 +1,32 @@
+name: Загрузка данных iNaturalist → Supabase
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "full — полная загрузка, incremental — только новые"
+        default: "full"
+  schedule:
+    - cron: "17 21 * * 0"   # каждое воскресенье ~02:17 по Астане — полное обновление
+    - cron: "17 21 * * 1-6" # остальные дни — только новые наблюдения
+
+jobs:
+  etl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r etl/requirements.txt
+      - name: Run ETL
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          if [ "${{ github.event.inputs.mode }}" = "incremental" ] || [ "${{ github.event.schedule }}" = "17 21 * * 1-6" ]; then
+            python etl/load_inat.py --incremental
+          else
+            python etl/load_inat.py
+          fi
