@@ -5,11 +5,12 @@ st.set_page_config(page_title="Флора Казахстана · Қазақст
 
 from lib import ui  # noqa: E402
 from lib.i18n import lang, t  # noqa: E402
-from lib import basemaps  # noqa: E402
+from lib import basemaps, session  # noqa: E402
 
 ui.base_map = basemaps.base_map   # подложки: CARTO только с ключом CARTO_KEY, иначе OpenStreetMap
 
 ui.setup()
+session.restore()   # вход из cookie — не «вылетать» при переходе по ссылкам
 
 pages = [
     st.Page("views/overview.py", title=t("nav_overview"), icon="🏠", default=True),
@@ -31,4 +32,5 @@ try:
 except TypeError:
     nav = st.navigation(pages)
 ui.sidebar()   # после st.navigation: ссылки st.page_link работают только на зарегистрированные страницы
+session.sync_cookie()
 nav.run()
