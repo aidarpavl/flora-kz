@@ -8,6 +8,7 @@ from lib.i18n import lang, t  # noqa: E402
 from lib import basemaps, session  # noqa: E402
 
 ui.base_map = basemaps.base_map   # подложки: CARTO только с ключом CARTO_KEY, иначе OpenStreetMap
+ui.PLACEHOLDER = basemaps.PLACEHOLDER   # заглушка «нет фото» встроена (внешняя картинка iNaturalist пропала)
 
 ui.setup()
 session.restore()   # вход из cookie — не «вылетать» при переходе по ссылкам
