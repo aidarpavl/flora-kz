@@ -13,86 +13,8 @@ from lib import db, ui
 from lib.i18n import area_name, lang, t
 
 KK = lang() == "kk"
-CATS = {
-    "I": ("I — исчезающие", "I — жойылып бара жатқан", "#d62728"),
-    "II": ("II — редкие", "II — сирек", "#ff7f0e"),
-    "III": ("III — сокращающиеся", "III — азайып бара жатқан", "#e6b800"),
-    "IV": ("IV — неопределённые", "IV — анықталмаған", "#7f7f7f"),
-    "V": ("V — восстанавливаемые", "V — қалпына келтірілетін", "#2ca02c"),
-}
-
-
-def cat_label(c):
-    return CATS[c][1 if KK else 0] if c in CATS else "—"
-
-
-def cat_color(c):
-    return CATS.get(c, ("", "", "#555"))[2]
-
-
-def nm(r):
-    """Название на текущем языке."""
-    return (r.get("name_kk") or r.get("name_ru") or r.get("latin")) if KK else (r.get("name_ru") or r.get("latin"))
-
-
-def txt(r, base):
-    """Текст поля на текущем языке (с запасным вариантом на другом)."""
-    a, b = (f"{base}_kk", f"{base}_ru") if KK else (f"{base}_ru", f"{base}_kk")
-    return r.get(a) or r.get(b) or ""
-
-
-def card_img(r):
-    """Фото: загруженное пользователем, иначе из iNaturalist/Википедии, иначе заглушка."""
-    if r.get("has_photo"):
-        return photo_uri(r["id"]) or ui.PLACEHOLDER
-    return r.get("photo_url") or ui.PLACEHOLDER
-
-
-def fam(r):
-    """Семейство на текущем языке + латынь."""
-    loc = (r.get("family_kk") or r.get("family_ru")) if KK else r.get("family_ru")
-    lat = r.get("family")
-    return f"{loc} ({lat})" if loc and lat else (loc or lat or "—")
-
-
-def photo_uri(sid):
-    p = db.safe("api_rb_photo", {}, p_id=int(sid)) or {}
-    return f"data:{p.get('mime') or 'image/jpeg'};base64,{p['data']}" if p.get("data") else None
-
-
-def to_b64(upload):
-    if not upload:
-        return None, None
-    try:
-        from PIL import Image
-        img = Image.open(upload).convert("RGB")
-        img.thumbnail((1600, 1600))
-        buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=85)
-        return base64.b64encode(buf.getvalue()).decode(), "image/jpeg"
-    except Exception:
-        return base64.b64encode(upload.getvalue()).decode(), upload.type
-
-
-def add_rb_layers(m, data_points, data_ranges, highlight=None):
-    for g in data_ranges:
-        c = cat_color(g.get("category"))
-        folium.GeoJson(g["geojson"], style_function=lambda f, c=c: {"color": c, "weight": 2, "fillColor": c,
-                                                                      "fillOpacity": 0.25},
-                       tooltip=f"{nm(g)} · {g.get('latin')}").add_to(m)
-    if len(data_points) > 400:          # много точек — быстрые кластеры
-        from folium.plugins import FastMarkerCluster
-        cb = """function (row) {
-          var m = L.circleMarker(new L.LatLng(row[0], row[1]), {radius: 6, color: '#fff', weight: 1,
-                                 fillColor: row[3], fillOpacity: 0.95});
-          m.bindTooltip(row[2]); return m; }"""
-        FastMarkerCluster([[p["lat"], p["lng"], p.get("title") or "", cat_color(p.get("category"))] for p in data_points],
-                          callback=cb, options={"maxClusterRadius": 40, "disableClusteringAtZoom": 9}).add_to(m)
-        return
-    for p in data_points:
-        c = cat_color(p.get("category"))
-        folium.CircleMarker([p["lat"], p["lng"]], radius=7, color="#fff", weight=2, fill=True, fill_color=c,
-                            fill_opacity=0.95, tooltip=p.get("title")).add_to(m)
+from lib.rb import CATS, cat_label, cat_color, nm, txt, card_img, fam, photo_uri, to_b64, page_link  # noqa: E402
+from lib.rb import add_layers as add_rb_layers  # noqa: E402
 
 
 kind, name = ui.scope()
@@ -120,12 +42,13 @@ with tab_cat:
         for _, r in rows.iterrows():
             img = card_img(r)
             parts.append(
-                f'<div class="card"><div class="ph" style="background-image:url(\'{img}\')">'
+                f'<div class="card"><a href="{page_link(r["id"])}" target="_self">'
+                f'<div class="ph" style="background-image:url(\'{img}\')">'
                 f'<div class="badge" style="background:{cat_color(r.get("category"))}">{ui.esc(cat_label(r.get("category")))}'
                 f' · 📍{int(r["n_points"])} · ⬟{int(r["n_ranges"])}</div></div>'
                 f'<div class="b"><div class="cn">{ui.esc(nm(r))}</div><div class="sn">{ui.esc(r["latin"])}'
                 f'{" (" + ui.esc(r["parent_latin"]) + ")" if r.get("parent_latin") else ""}</div>'
-                f'<div class="sn" style="font-style:normal;color:#888">{ui.esc(fam(r))}</div></div></div>')
+                f'<div class="sn" style="font-style:normal;color:#888">{ui.esc(fam(r))}</div></div></a></div>')
         st.markdown(f'<div class="grid">{"".join(parts)}</div>', unsafe_allow_html=True)
 
     st.markdown(f"#### {t('obs_map')}")
@@ -147,6 +70,8 @@ with tab_card:
         sid = st.selectbox(t("rb_choose"), list(opts), format_func=opts.get, key="rb_card_sel")
         d = db.safe("api_rb_get", {}, p_id=sid, p_auth=ui.auth_token()) or {}
         s = d.get("species") or {}
+        st.markdown(f'<a href="{page_link(sid)}" target="_self">📄 {"Түр бетін ашу" if KK else "Открыть страницу вида"} →</a>',
+                    unsafe_allow_html=True)
         c1, c2 = st.columns([1, 2])
         with c1:
             st.image(card_img(s), use_container_width=True)
