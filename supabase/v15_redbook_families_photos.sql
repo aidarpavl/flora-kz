@@ -1,0 +1,10 @@
+-- v15: справочник семейств (ru/kk) с автоподстановкой, фото из GBIF, мягкая обработка 429.
+-- Применено в Supabase 2026-11-20 (полный текст функций — как выполнено в SQL-редакторе).
+-- * rb_families(latin, ru, kk) + триггер rb_family на red_book_species (family_ru/family_kk по латинскому семейству)
+-- * rb_get_json: 429 -> исключение 'HTTP_429 <host>', вид не помечается ошибкой, повтор в следующую минуту
+-- * rb_photo_gbif(id): фото из записей GBIF (сначала наблюдения, затем любые) если нет фото iNat/Wikipedia
+-- * rb_enrich_batch(n): обогащение + фото GBIF; догоняет фото для уже обработанных
+-- * rb_finish_check(): по завершении включает обратно cron 'flora-wiki' и снимает 'flora-redbook'
+-- * rb_tax_batch(n): быстрый проход GBIF только за семейством/родом (cron 'flora-rb-tax', снят по завершении)
+-- Расписание: flora-redbook '* * * * *' -> rb_enrich_batch(3); rb_finish_check();
+-- На время импорта flora-wiki выключен (cron.alter_job active=false), чтобы не ловить 429 от Википедии.
