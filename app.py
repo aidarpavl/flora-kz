@@ -7,7 +7,6 @@ from lib import ui  # noqa: E402
 from lib.i18n import t  # noqa: E402
 
 ui.setup()
-ui.sidebar()
 
 pages = [
     st.Page("views/overview.py", title=t("nav_overview"), icon="🏠", default=True),
@@ -27,4 +26,5 @@ try:
     nav = st.navigation(pages, position="top")
 except TypeError:
     nav = st.navigation(pages)
+ui.sidebar()   # после st.navigation: ссылки st.page_link работают только на зарегистрированные страницы
 nav.run()
