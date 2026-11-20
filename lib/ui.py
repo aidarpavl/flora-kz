@@ -128,7 +128,7 @@ def ago(ts) -> str:
 
 def obs_title(row) -> tuple[str, str]:
     """(общее название, научное с рангом) для наблюдения iNaturalist."""
-    common = row.get("obs_common_name") or ""
+    common = (row.get("common_name_kk") if lang() == "kk" else None) or row.get("obs_common_name") or ""
     sci = row.get("obs_taxon_name") or ("Белгісіз" if lang() == "kk" else "Неизвестно")
     rank = row.get("obs_taxon_rank") or ""
     sci_full = f"{RANKS[rank][1 if lang() == 'kk' else 0]} {sci}" if rank in RANKS else sci
@@ -154,7 +154,7 @@ def is_editor() -> bool:
 
 def action_buttons():
     """Кнопки в шапке: добавить растение и вход/регистрация."""
-    c1, c2, _ = st.columns([1.2, 1.4, 3])
+    c1, c2, _ = st.columns([2, 2.4, 3])
     c1.page_link("views/add.py", label=t("btn_add_plant"))
     a = auth()
     c2.page_link("views/account.py", label=f"👤 {a['name']}" if a else t("btn_login"))
