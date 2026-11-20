@@ -115,3 +115,42 @@ def search_taxa(q: str) -> pd.DataFrame:
 
 def progress() -> dict:
     return safe("api_progress", {}) or {}
+
+
+# ---------- добавленные наблюдения, Википедия, редактирование ----------
+
+def user_observations(taxon=None, kind="all", name="all", limit=500) -> pd.DataFrame:
+    return pd.DataFrame(safe("api_user_observations", [], p_taxon=taxon, p_kind=kind, p_name=name,
+                             p_limit=limit) or [])
+
+
+def user_photo(obs_id: int) -> dict:
+    return safe("api_user_photo", {}, p_id=int(obs_id)) or {}
+
+
+def write(fn: str, **params):
+    """Вызов без кеша (запись). После успеха кеш чтения сбрасывается."""
+    url, key = _cfg()
+    headers = {"apikey": key, "Content-Type": "application/json"}
+    if not key.startswith("sb_"):
+        headers["Authorization"] = f"Bearer {key}"
+    r = requests.post(f"{url}/rest/v1/rpc/{fn}", headers=headers, json=params, timeout=90)
+    if r.status_code >= 300:
+        try:
+            msg = r.json().get("message", r.text)
+        except Exception:
+            msg = r.text
+        raise RuntimeError(msg)
+    rpc.clear()
+    return r.json()
+
+
+def editor_login(pwd: str) -> bool:
+    try:
+        return bool(write("api_editor_login", p_pwd=pwd))
+    except Exception:
+        return False
+
+
+def fetch_wiki(taxon_id: int) -> dict:
+    return write("api_fetch_wiki", p_id=int(taxon_id)) or {}

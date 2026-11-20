@@ -1,36 +1,62 @@
-"""Общие компоненты в стиле страницы проекта iNaturalist."""
+"""Общие компоненты в стиле страницы проекта iNaturalist (двуязычные, карты — folium)."""
 from __future__ import annotations
 
 import html
+import json
 import math
 from datetime import datetime, timezone
 from urllib.parse import quote
 
+import folium
 import pandas as pd
-import pydeck as pdk
 import streamlit as st
+from folium.plugins import Fullscreen, HeatMap, MarkerCluster
+from streamlit_folium import st_folium
 
 from lib import db
+from lib.i18n import area_name, lang, language_switch, t, taxon_name
 
 GREEN = "#74AC00"
 INAT = "https://www.inaturalist.org"
 PROJECT_URL = f"{INAT}/projects/flora-kazahstana"
 PLACEHOLDER = "https://static.inaturalist.org/images/iconic_taxa/plantae-200px.png"
 USER_PLACEHOLDER = "https://static.inaturalist.org/attachment_defaults/users/icons/defaults/thumb.png"
-KZ_VIEW = pdk.ViewState(latitude=48.0, longitude=67.5, zoom=3.7, pitch=0)
-QUALITY = {"research": "Исследовательский", "needs_id": "Требуется идентификация", "casual": "Обыкновенное"}
-RANKS = {"genus": "Род", "family": "Семейство", "subfamily": "Подсемейство", "tribe": "Триба",
-         "order": "Порядок", "class": "Класс", "kingdom": "Царство", "section": "Секция",
-         "subgenus": "Подрод", "hybrid": "Гибрид", "complex": "Комплекс"}
+KZ_CENTER, KZ_ZOOM = [48.2, 67.5], 5
+RANKS = {"genus": ("Род", "Туыс"), "family": ("Семейство", "Тұқымдас"), "subfamily": ("Подсемейство", "Тұқымдас тармағы"),
+         "tribe": ("Триба", "Триба"), "order": ("Порядок", "Қатар"), "class": ("Класс", "Класс"),
+         "section": ("Секция", "Секция"), "subgenus": ("Подрод", "Туыс тармағы"), "hybrid": ("Гибрид", "Будан"),
+         "complex": ("Комплекс", "Кешен"), "subspecies": ("Подвид", "Түршe"), "variety": ("Разновидность", "Әртүрлілік")}
+
+
+ZONE_COLORS = {"Лесостепь": "#64990a", "Степь": "#c8f5c4", "Полупустыня": "#ffd83f",
+               "Пустыня": "#fff28a", "Горы": "#c792d0"}
+
+
+def zone_legend():
+    from lib.i18n import lang as _lang
+    items = db.areas("zone")
+    order = ["Лесостепь", "Степь", "Полупустыня", "Пустыня", "Горы"]
+    by = {a["name"]: a for a in items}
+    chips = "".join(
+        f'<span style="display:inline-flex;align-items:center;margin:0 14px 6px 0;font-size:.9rem">'
+        f'<span style="width:28px;height:14px;border-radius:7px;background:{ZONE_COLORS[n]};'
+        f'border:1px solid #999;margin-right:6px"></span>{esc(area_name(by[n]) if n in by else n)}'
+        f'{" · " + fmt(by[n]["species"]) + " " + t("species_n") if n in by else ""}</span>'
+        for n in order)
+    st.markdown(f"<div>{chips}</div>", unsafe_allow_html=True)
+
+
+def quality_labels() -> dict:
+    return {"research": t("q_research"), "needs_id": t("q_needs_id"), "casual": t("q_casual")}
+
 
 CSS = f"""
 <style>
-.block-container {{padding-top: 1rem; max-width: 1250px;}}
+.block-container {{padding-top: 1rem; max-width: 1280px;}}
 .banner {{display:flex; border-radius:4px; overflow:hidden; margin-bottom:14px; min-height:170px;}}
 .banner .l {{flex:2; background:{GREEN} repeating-radial-gradient(circle at 30% 40%, rgba(255,255,255,.08) 0 2px, transparent 2px 22px);
              position:relative;}}
-.banner .l .t {{position:absolute; left:22px; bottom:20px; background:#333; color:#fff; font-size:1.6rem;
-               padding:6px 14px;}}
+.banner .l .t {{position:absolute; left:22px; bottom:20px; background:#333; color:#fff; font-size:1.6rem; padding:6px 14px;}}
 .banner .r {{flex:1; background:#689c00; color:#fff; padding:16px 20px; font-size:.9rem;}}
 .banner .r h3 {{color:#fff; margin:0 0 6px 0; font-size:1.25rem;}}
 .banner .r a {{color:#fff;}}
@@ -63,7 +89,7 @@ CSS = f"""
 .board .row .v {{margin-left:auto; color:#333;}}
 .board .row a {{color:#333; text-decoration:none;}}
 .muted {{color:#888; font-size:.85rem;}}
-.q-research {{color:{GREEN};}} .q-needs_id {{color:#c9a400;}} .q-casual {{color:#999;}}
+.desc {{background:#f7faf0; border-left:4px solid {GREEN}; padding:10px 14px; font-size:.95rem; line-height:1.5;}}
 </style>
 """
 
@@ -78,36 +104,38 @@ def fmt(n) -> str:
 
 
 def esc(s) -> str:
-    return html.escape(str(s)) if s is not None and not (isinstance(s, float) and math.isnan(s)) else ""
+    if s is None or (isinstance(s, float) and math.isnan(s)):
+        return ""
+    return html.escape(str(s))
 
 
 def ago(ts) -> str:
     if not ts:
         return ""
     try:
-        t = pd.to_datetime(ts, utc=True).to_pydatetime()
+        d = (datetime.now(timezone.utc) - pd.to_datetime(ts, utc=True).to_pydatetime()).days
     except Exception:
         return ""
-    d = (datetime.now(timezone.utc) - t).days
+    kk = lang() == "kk"
     if d < 1:
-        return "сегодня"
+        return "бүгін" if kk else "сегодня"
     if d < 30:
-        return f"{d} дн"
+        return f"{d} күн" if kk else f"{d} дн"
     if d < 365:
-        return f"{d // 30}мес"
-    return f"{d // 365}г"
+        return f"{d // 30} ай" if kk else f"{d // 30}мес"
+    return f"{d // 365} жыл" if kk else f"{d // 365}г"
 
 
-def taxon_title(row) -> tuple[str, str]:
-    """(общее название, научное с рангом) для наблюдения."""
+def obs_title(row) -> tuple[str, str]:
+    """(общее название, научное с рангом) для наблюдения iNaturalist."""
     common = row.get("obs_common_name") or ""
-    sci = row.get("obs_taxon_name") or "Неизвестно"
+    sci = row.get("obs_taxon_name") or ("Белгісіз" if lang() == "kk" else "Неизвестно")
     rank = row.get("obs_taxon_rank") or ""
-    sci_full = f"{RANKS[rank]} {sci}" if rank in RANKS else sci
+    sci_full = f"{RANKS[rank][1 if lang() == 'kk' else 0]} {sci}" if rank in RANKS else sci
     return (common or sci_full), (sci_full if common else "")
 
 
-# ---------- территория (глобальный фильтр) ----------
+# ---------- территория и язык ----------
 
 def scope() -> tuple[str, str]:
     if "scope" not in st.session_state:
@@ -118,27 +146,34 @@ def scope() -> tuple[str, str]:
 
 
 def scope_label(kind, name) -> str:
-    return "Весь Казахстан" if kind == "all" else name
+    if kind == "all":
+        return t("all_kz")
+    for a in db.areas(kind):
+        if a["name"] == name:
+            return area_name(a)
+    return name
 
 
-def sidebar_scope():
-    kind, name = scope()
+def sidebar():
     with st.sidebar:
-        st.markdown("### 🗺️ Территория")
-        options = ["Весь Казахстан", "Область", "Природная зона"]
+        st.markdown(f"### 🌐 {t('language')}")
+        language_switch()
+        st.markdown(f"### 🗺️ {t('territory')}")
+        kind, name = scope()
+        options = [t("all_kz"), t("region"), t("zone")]
         idx = {"all": 0, "region": 1, "zone": 2}.get(kind, 0)
-        mode = st.radio("Показывать данные", options, index=idx, label_visibility="collapsed")
-        if mode == "Весь Казахстан":
+        mode = st.radio(t("territory"), options, index=idx, label_visibility="collapsed")
+        if mode == options[0]:
             new = ("all", "all")
         else:
-            k = "region" if mode == "Область" else "zone"
+            k = "region" if mode == options[1] else "zone"
             items = db.areas(k)
             names = [a["name"] for a in items]
             if not names:
-                st.info("Территории ещё не загружены.")
+                st.info(t("not_loaded"))
                 new = ("all", "all")
             else:
-                labels = {a["name"]: f'{a["name"]} · {fmt(a["species"])} видов' for a in items}
+                labels = {a["name"]: f'{area_name(a)} · {fmt(a["species"])} {t("species_n")}' for a in items}
                 cur = name if (kind == k and name in names) else names[0]
                 sel = st.selectbox(mode, names, index=names.index(cur), format_func=labels.get)
                 new = (k, sel)
@@ -146,16 +181,15 @@ def sidebar_scope():
             st.session_state.scope = new
             st.query_params["scope"] = f"{new[0]}:{new[1]}"
             st.rerun()
-        st.caption("Фильтр применяется ко всем вкладкам.")
+        st.caption(t("filter_hint"))
         p = db.progress()
         if p:
             st.markdown("---")
-            st.caption(f"В базе: {fmt(p.get('observations'))} наблюдений, {fmt(p.get('taxa'))} видов. "
-                       "Статистика обновляется каждые 10 минут.")
-        st.markdown(f"[Проект на iNaturalist ↗]({PROJECT_URL})")
+            st.caption(t("in_db", o=fmt(p.get("observations")), t=fmt(p.get("taxa"))))
+        if st.session_state.get("editor_pwd"):
+            st.success(f"✏️ {t('logged_in')}")
+        st.markdown(f"[iNaturalist ↗]({PROJECT_URL})")
 
-
-# ---------- шапка ----------
 
 def setup():
     st.markdown(CSS, unsafe_allow_html=True)
@@ -165,51 +199,60 @@ def header():
     kind, name = scope()
     s = db.stats(kind, name)
     st.markdown(
-        f"""<div class="banner"><div class="l"><div class="t">Флора Казахстана</div></div>
-        <div class="r"><h3>Подробнее</h3>Народный проект по изучению диких растений Казахстана.
-        Наблюдения из проекта iNaturalist с разбивкой по областям и природным зонам.<br><br>
-        <a href="{PROJECT_URL}" target="_blank">Открыть проект на iNaturalist ›</a></div></div>
+        f"""<div class="banner"><div class="l"><div class="t">{esc(t('title'))}</div></div>
+        <div class="r"><h3>{esc(t('about'))}</h3>{esc(t('about_text'))}<br><br>
+        <a href="{PROJECT_URL}" target="_blank">{esc(t('open_inat'))}</a></div></div>
         <div class="counters">
-          <div class="c"><div class="n">{fmt(s.get('observations'))}</div><div class="l">наблюдений</div></div>
-          <div class="c"><div class="n">{fmt(s.get('species'))}</div><div class="l">видов</div></div>
-          <div class="c"><div class="n">{fmt(s.get('identifiers'))}</div><div class="l">экспертов</div></div>
-          <div class="c"><div class="n">{fmt(s.get('observers'))}</div><div class="l">наблюдателей</div></div>
+          <div class="c"><div class="n">{fmt(s.get('observations'))}</div><div class="l">{t('c_observations')}</div></div>
+          <div class="c"><div class="n">{fmt(s.get('species'))}</div><div class="l">{t('c_species')}</div></div>
+          <div class="c"><div class="n">{fmt(s.get('identifiers'))}</div><div class="l">{t('c_identifiers')}</div></div>
+          <div class="c"><div class="n">{fmt(s.get('observers'))}</div><div class="l">{t('c_observers')}</div></div>
           <div class="scope">📍 {esc(scope_label(kind, name))}</div>
         </div>""", unsafe_allow_html=True)
     return s
+
+
+def empty_db_notice(s: dict) -> bool:
+    if not s or not s.get("observations"):
+        st.info(t("loading_db", o=fmt(db.progress().get("observations"))))
+        return True
+    return False
+
+
+def footer():
+    st.markdown("---")
+    st.markdown(f'<span class="muted">{esc(t("footer"))}</span>', unsafe_allow_html=True)
 
 
 # ---------- карточки ----------
 
 def taxon_link(taxon_id) -> str:
     kind, name = scope()
-    return f"./taxon?id={taxon_id}&scope={quote(kind + ':' + name)}"
+    return f"./taxon?id={taxon_id}&scope={quote(kind + ':' + name)}&lang={lang()}"
 
 
 def species_cards(df: pd.DataFrame):
     if df.empty:
-        st.info("Видов не найдено.")
+        st.info(t("not_found"))
         return
     parts = []
     for _, r in df.iterrows():
         img = r.get("photo_url") or PLACEHOLDER
-        cn = esc(r.get("common_name_ru") or r.get("common_name_en") or r.get("name"))
-        sn = esc(r.get("name"))
         parts.append(
             f'<div class="card"><a href="{taxon_link(r["taxon_id"])}" target="_self">'
             f'<div class="ph" style="background-image:url(\'{esc(img)}\')">'
-            f'<div class="badge">{fmt(r.get("n"))} наблюдений</div></div>'
-            f'<div class="b"><div class="cn">{cn}</div><div class="sn">{sn}</div></div></a></div>')
+            f'<div class="badge">{fmt(r.get("n"))} {t("observations_n")}</div></div>'
+            f'<div class="b"><div class="cn">{esc(taxon_name(r))}</div><div class="sn">{esc(r.get("name"))}</div></div></a></div>')
     st.markdown(f'<div class="grid">{"".join(parts)}</div>', unsafe_allow_html=True)
 
 
 def observation_cards(df: pd.DataFrame):
     if df.empty:
-        st.info("Наблюдений не найдено.")
+        st.info(t("not_found"))
         return
     parts = []
     for _, r in df.iterrows():
-        cn, sn = taxon_title(r)
+        cn, sn = obs_title(r)
         img = r.get("photo_url") or PLACEHOLDER
         av = r.get("user_icon") or USER_PLACEHOLDER
         meta = f'🛡 {fmt(r.get("identifications_count") or 0)} · {ago(r.get("created_at") or r.get("observed_on"))}'
@@ -222,163 +265,137 @@ def observation_cards(df: pd.DataFrame):
     st.markdown(f'<div class="grid">{"".join(parts)}</div>', unsafe_allow_html=True)
 
 
-def board(title: str, rows: list[tuple[str, str, str, str]], square=False):
-    """rows: (картинка, подпись, ссылка, значение)."""
+def board(title: str, rows: list[tuple], square=False):
     items = "".join(
         f'<div class="row"><img class="{"sq" if square else ""}" src="{esc(img) or USER_PLACEHOLDER}">'
-        f'<a href="{esc(link)}" target="{"_self" if link.startswith("./") else "_blank"}">{esc(label)}</a>'
+        f'<a href="{esc(link)}" target="{"_self" if str(link).startswith("./") else "_blank"}">{esc(label)}</a>'
         f'<span class="v">{esc(val)}</span></div>'
         for img, label, link, val in rows)
-    st.markdown(f'<div class="board"><h4>{esc(title)}</h4>{items or "<span class=muted>Нет данных</span>"}</div>',
+    st.markdown(f'<div class="board"><h4>{esc(title)}</h4>{items or "<span class=muted>" + t("no_data") + "</span>"}</div>',
                 unsafe_allow_html=True)
 
 
-# ---------- карты ----------
+# ---------- карты (folium: спутник / рельеф / схема) ----------
 
-def _cells_layer(cells: pd.DataFrame):
-    return pdk.Layer("HeatmapLayer", cells, get_position="[lng, lat]", get_weight="n",
-                     radius_pixels=28, intensity=1.2, threshold=0.03, aggregation="SUM",
-                     color_range=[[255, 237, 160], [254, 217, 118], [254, 178, 76],
-                                  [253, 141, 60], [240, 59, 32], [189, 0, 38]])
-
-
-def _grid_layer(cells: pd.DataFrame):
-    df = cells.copy()
-    if df.empty:
-        return None
-    lg = df["n"].clip(lower=1).map(math.log10)
-    mx = max(float(lg.max()), 1.0)
-    df["c"] = [[255, int(200 - 170 * v / mx), int(80 - 70 * v / mx), 200] for v in lg]
-    df["x"] = df["lng"] - 0.025
-    df["y"] = df["lat"] - 0.025
-    return pdk.Layer("GridCellLayer", df, get_position="[x, y]", cell_size=5000,
-                     extruded=False, get_fill_color="c", pickable=True)
+def base_map(center=None, zoom=None, height_hint=None) -> folium.Map:
+    m = folium.Map(location=center or KZ_CENTER, zoom_start=zoom or KZ_ZOOM, tiles=None, control_scale=True,
+                   prefer_canvas=True)
+    folium.TileLayer(
+        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        attr="Esri, Maxar, Earthstar Geographics", name=f"🛰️ {t('satellite')}", max_zoom=19).add_to(m)
+    folium.TileLayer(
+        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+        attr="Esri", name="🏷️ Подписи / Жазулар", overlay=True, control=True, opacity=0.9).add_to(m)
+    folium.TileLayer("OpenTopoMap", name=f"⛰️ {t('terrain')}", max_zoom=17,
+                     attr="© OpenStreetMap, SRTM | © OpenTopoMap (CC-BY-SA)").add_to(m)
+    folium.TileLayer("CartoDB positron", name=f"🗺️ {t('scheme')}").add_to(m)
+    Fullscreen(position="topleft").add_to(m)
+    return m
 
 
-def _points_layer(pts: pd.DataFrame):
-    df = pts.copy()
-    df["color"] = df["quality"].map({"research": [116, 172, 0, 220], "needs_id": [235, 190, 0, 220]}) \
-        .apply(lambda c: c if isinstance(c, list) else [150, 150, 150, 200])
-    return pdk.Layer("ScatterplotLayer", df, id="points", get_position="[lng, lat]", get_fill_color="color",
-                     get_line_color=[255, 255, 255], line_width_min_pixels=1, stroked=True,
-                     get_radius=600, radius_min_pixels=3, radius_max_pixels=9, pickable=True)
-
-
-def _areas_layer(kind: str, highlight: str | None = None):
-    items = db.areas(kind)
-    feats = []
-    for a in items:
-        if not a.get("geojson") or not a["geojson"].get("type"):
-            continue
-        hl = a["name"] == highlight
-        feats.append({"type": "Feature", "geometry": a["geojson"],
-                      "properties": {"name": a["name"], "species": fmt(a["species"]),
-                                     "observations": fmt(a["observations"]),
-                                     "line": [214, 40, 40, 255] if hl else [90, 90, 90, 140],
-                                     "lw": 3 if hl else 1}})
-    if not feats:
-        return None
-    return pdk.Layer("GeoJsonLayer", {"type": "FeatureCollection", "features": feats}, id="areas",
-                     stroked=True, filled=True, get_fill_color=[0, 0, 0, 0], get_line_color="properties.line",
-                     get_line_width="properties.lw", line_width_units="pixels", pickable=False)
-
-
-def observations_map(kind, name, *, taxon=None, user=None, quality=None, mode="auto", height=520,
-                     key="map", borders: str | None = "region"):
-    """Карта наблюдений: сетка (как на iNaturalist), теплокарта или точки."""
-    layers = []
-    if borders:
-        bl = _areas_layer(borders, name if kind == borders else None)
-        if bl:
-            layers.append(bl)
-    filtered = taxon or user or quality
-    pts = None
-    if mode == "auto":
-        mode = "points" if filtered or kind != "all" else "grid"
-    if mode in ("grid", "heat"):
-        cells = db.map_cells(kind, name)
-        layer = _grid_layer(cells) if mode == "grid" else _cells_layer(cells)
-        if layer:
-            layers.append(layer)
-        tooltip = {"html": "Наблюдений в квадрате: <b>{n}</b>"} if mode == "grid" else None
-    else:
-        pts = db.map_points(kind, name, taxon=taxon, user=user, quality=quality)
-        if not pts.empty:
-            layers.append(_points_layer(pts))
-        tooltip = {"html": "<b>{title}</b><br/><i>{sci}</i><br/>{user} · {date}",
-                   "style": {"backgroundColor": "#fff", "color": "#333", "fontSize": "12px"}}
-    deck = pdk.Deck(layers=layers, initial_view_state=KZ_VIEW, map_style="light", tooltip=tooltip)
-    event = None
-    try:
-        event = st.pydeck_chart(deck, height=height, on_select="rerun", selection_mode="single-object", key=key)
-    except TypeError:
-        st.pydeck_chart(deck, height=height)
-    if pts is not None:
-        st.caption(f"Показано точек: {fmt(len(pts))}" + (" (последние 20 000)" if len(pts) >= 20000 else "")
-                   + " · 🟢 исследовательский уровень · 🟡 требуется идентификация · ⚪ обыкновенное")
-        # клик по точке → карточка наблюдения
-        try:
-            objs = event.selection.objects.get("points") if event else None
-        except Exception:
-            objs = None
-        if objs:
-            o = objs[0]
-            st.success(f"**{o.get('title')}** *{o.get('sci') or ''}* — {o.get('user')}, {o.get('date')} · "
-                       f"[открыть наблюдение ↗]({INAT}/observations/{o.get('id')})")
-
-
-def choropleth(kind: str, highlight: str | None = None, height=520, key="choro"):
+def add_borders(m: folium.Map, kind: str = "region", highlight: str | None = None, choropleth=False):
     items = db.areas(kind)
     if not items:
-        st.info("Территории ещё не загружены.")
-        return None
+        return
     vals = [a["species"] for a in items] or [0]
     lo, hi = min(vals), max(vals) or 1
     feats = []
     for a in items:
         if not a.get("geojson") or not a["geojson"].get("type"):
             continue
-        t = (a["species"] - lo) / ((hi - lo) or 1)
-        hl = a["name"] == highlight
-        feats.append({"type": "Feature", "geometry": a["geojson"],
-                      "properties": {"name": a["name"], "species": fmt(a["species"]),
-                                     "observations": fmt(a["observations"]), "observers": fmt(a["observers"]),
-                                     "fill": [int(232 - 150 * t), int(245 - 85 * t), int(205 - 195 * t), 200],
-                                     "line": [214, 40, 40, 255] if hl else [80, 80, 80, 170],
-                                     "lw": 3 if hl else 1}})
-    layer = pdk.Layer("GeoJsonLayer", {"type": "FeatureCollection", "features": feats}, id="areas",
-                      pickable=True, stroked=True, filled=True, auto_highlight=True,
-                      get_fill_color="properties.fill", get_line_color="properties.line",
-                      get_line_width="properties.lw", line_width_units="pixels")
-    tooltip = {"html": "<b>{name}</b><br/>Видов: {species}<br/>Наблюдений: {observations}<br/>Наблюдателей: {observers}",
-               "style": {"backgroundColor": "#fff", "color": "#333"}}
-    deck = pdk.Deck(layers=[layer], initial_view_state=KZ_VIEW, map_style="light", tooltip=tooltip)
+        k = (a["species"] - lo) / ((hi - lo) or 1)
+        feats.append({"type": "Feature", "geometry": a["geojson"], "properties": {
+            "key": a["name"], "title": area_name(a), "species": fmt(a["species"]),
+            "observations": fmt(a["observations"]), "observers": fmt(a["observers"]),
+            "fill": ZONE_COLORS.get(a["name"]) if kind == "zone" else
+                    f"#{int(232 - 150 * k):02x}{int(245 - 85 * k):02x}{int(205 - 195 * k):02x}"}})
+    fc = {"type": "FeatureCollection", "features": feats}
+
+    def style(f):
+        hl = f["properties"]["key"] == highlight
+        zone_fill = kind == "zone"
+        return {"color": "#ff3b30" if hl else ("#555555" if zone_fill else "#ffffff"),
+                "weight": 3 if hl else (0.8 if zone_fill else 1.2),
+                "fillColor": f["properties"]["fill"] if (choropleth or zone_fill) else "#000000",
+                "fillOpacity": (0.7 if choropleth else 0.35) if zone_fill else (0.55 if choropleth else 0.0),
+                "opacity": 0.9}
+
+    folium.GeoJson(
+        fc, name=t("regions") if kind == "region" else t("zones"), style_function=style,
+        highlight_function=lambda f: {"weight": 3, "color": "#ffd60a"},
+        tooltip=folium.GeoJsonTooltip(fields=["title", "species", "observations"],
+                                      aliases=["", t("c_species").capitalize() + ":", t("c_observations").capitalize() + ":"]),
+    ).add_to(m)
+
+
+_POINT_CB = """
+function (row) {
+  var c = row[5] == 'research' ? '#74AC00' : (row[5] == 'needs_id' ? '#f5c400' : '#bbbbbb');
+  var m = L.circleMarker(new L.LatLng(row[0], row[1]), {radius: 6, color: '#fff', weight: 1, fillColor: c, fillOpacity: 0.95});
+  m.bindPopup('<b>' + row[2] + '</b><br><i>' + (row[3] || '') + '</i><br>' + (row[6] || '') + ' · ' + (row[7] || '') +
+              '<br><a href="https://www.inaturalist.org/observations/' + row[4] + '" target="_blank">iNaturalist ↗</a>');
+  return m;
+}
+"""
+
+
+def add_points(m: folium.Map, pts: pd.DataFrame):
+    if pts.empty:
+        return
+    data = pts[["lat", "lng", "title", "sci", "id", "quality", "user", "date"]].fillna("").values.tolist()
+    from folium.plugins import FastMarkerCluster
+    FastMarkerCluster(data, callback=_POINT_CB, name=t("map_points"),
+                      options={"maxClusterRadius": 45, "disableClusteringAtZoom": 10}).add_to(m)
+
+
+def add_user_points(m: folium.Map, df: pd.DataFrame):
+    if df is None or df.empty:
+        return
+    fg = folium.FeatureGroup(name="🔵 " + t("user_obs"))
+    for _, r in df.iterrows():
+        title = r["name_kk"] if lang() == "kk" else r["name_ru"]
+        desc = r.get("description_kk") if lang() == "kk" else r.get("description_ru")
+        popup = (f"<b>{esc(title)}</b><br><i>{esc(r.get('sci'))} {esc(r.get('subspecies') or '')}</i><br>"
+                 f"{esc(r.get('author') or '')} · {esc(r.get('observed_on') or '')}<br>{esc((desc or '')[:200])}")
+        folium.CircleMarker([r["lat"], r["lng"]], radius=8, color="#fff", weight=2, fill=True,
+                            fill_color="#1e88e5", fill_opacity=0.95, popup=folium.Popup(popup, max_width=280)).add_to(fg)
+    fg.add_to(m)
+
+
+def show_map(m: folium.Map, key: str, height=540, returned=None):
+    folium.LayerControl(collapsed=True).add_to(m)
+    return st_folium(m, height=height, use_container_width=True, key=key,
+                     returned_objects=returned or [])
+
+
+def observations_map(kind, name, *, taxon=None, user=None, quality=None, mode="auto", height=540,
+                     key="map", borders: str | None = "region", limit=15000):
+    """Карта наблюдений: кластеры точек (как на iNaturalist) или теплокарта."""
+    m = base_map()
+    if borders:
+        add_borders(m, borders, name if kind == borders else None)
+    if mode == "auto":
+        mode = "points"
+    if mode == "heat":
+        cells = db.map_cells(kind, name)
+        if not cells.empty:
+            mx = float(cells["n"].max()) or 1.0
+            HeatMap([[r.lat, r.lng, math.log1p(r.n) / math.log1p(mx)] for r in cells.itertuples()],
+                    name=t("map_heat"), radius=14, blur=12, min_opacity=0.35, max_zoom=9).add_to(m)
+    else:
+        pts = db.map_points(kind, name, taxon=taxon, user=user, quality=quality, limit=limit)
+        add_points(m, pts)
+        st.caption(t("shown_points", n=fmt(len(pts))) + " · " + t("legend_q"))
+    add_user_points(m, db.user_observations(taxon=taxon, kind=kind, name=name))
+    show_map(m, key=key, height=height)
+
+
+def territory_map(kind: str, highlight: str | None, key: str, height=560) -> str | None:
+    """Хороплет областей/зон; возвращает ключ территории, по которой кликнули."""
+    m = base_map()
+    add_borders(m, kind, highlight, choropleth=True)
+    out = show_map(m, key=key, height=height, returned=["last_active_drawing"])
     try:
-        ev = st.pydeck_chart(deck, height=height, on_select="rerun", selection_mode="single-object", key=key)
-        objs = ev.selection.objects.get("areas") if ev else None
-        if objs:
-            props = objs[0].get("properties", objs[0])
-            return props.get("name")
-    except TypeError:
-        st.pydeck_chart(deck, height=height)
+        return (out or {}).get("last_active_drawing", {}).get("properties", {}).get("key")
     except Exception:
-        pass
-    return None
-
-
-def footer():
-    st.markdown("---")
-    st.markdown(
-        f'<span class="muted">Данные: <a href="{PROJECT_URL}" target="_blank">iNaturalist — проект «Флора Казахстана»</a>; '
-        'фотографии принадлежат авторам наблюдений (лицензии CC на iNaturalist). '
-        'Границы областей — geoBoundaries (2017, без областей Абай, Жетісу, Ұлытау); '
-        'природные зоны — схематичные.</span>', unsafe_allow_html=True)
-
-
-def empty_db_notice(s: dict) -> bool:
-    if not s or not s.get("observations"):
-        p = db.progress()
-        st.info(f"Данные ещё загружаются: в базе {fmt(p.get('observations'))} наблюдений. "
-                "Сводная статистика пересчитывается каждые 10 минут — обновите страницу чуть позже.")
-        return True
-    return False
+        return None
