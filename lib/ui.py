@@ -152,12 +152,21 @@ def is_editor() -> bool:
     return bool(a and a.get("role") in ("editor", "admin"))
 
 
+def safe_link(page: str, label: str, url: str, where=None):
+    """st.page_link, а если страницы ещё не зарегистрированы (вызов до st.navigation) — обычная ссылка."""
+    w = where or st
+    try:
+        w.page_link(page, label=label)
+    except Exception:
+        w.markdown(f'<a href="{url}" target="_self">{esc(label)}</a>', unsafe_allow_html=True)
+
+
 def action_buttons():
     """Кнопки в шапке: добавить растение и вход/регистрация."""
     c1, c2, _ = st.columns([2, 2.4, 3])
-    c1.page_link("views/add.py", label=t("btn_add_plant"))
+    safe_link("views/add.py", t("btn_add_plant"), "./add", c1)
     a = auth()
-    c2.page_link("views/account.py", label=f"👤 {a['name']}" if a else t("btn_login"))
+    safe_link("views/account.py", f"👤 {a['name']}" if a else t("btn_login"), "./account", c2)
 
 
 # ---------- территория и язык ----------
@@ -215,7 +224,7 @@ def sidebar():
         if a:
             st.success(t("logged_as", n=a["name"]) + (" · ✏️" if is_editor() else ""))
         else:
-            st.page_link("views/account.py", label=t("btn_login"))
+            safe_link("views/account.py", t("btn_login"), "./account")
         st.markdown(f"[iNaturalist ↗]({PROJECT_URL})")
 
 
