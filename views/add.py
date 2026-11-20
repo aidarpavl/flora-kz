@@ -9,9 +9,9 @@ from lib import db, ui
 from lib.i18n import lang, t
 
 st.subheader(t("add_title"))
-if not st.session_state.get("editor_pwd"):
-    st.warning(t("need_login"))
-    st.page_link("views/editor.py", label=t("nav_editor"), icon="✏️")
+if not ui.auth_token():
+    st.info(t("need_account"))
+    st.page_link("views/account.py", label=t("btn_login"))
     st.stop()
 
 # ---- 1. точка на карте ----
@@ -51,7 +51,7 @@ d1, d2 = st.columns(2)
 desc_ru = d1.text_area(t("desc_ru"), height=120)
 desc_kk = d2.text_area(t("desc_kk"), height=120)
 a1, a2 = st.columns(2)
-author = a1.text_input(t("author"), value=st.session_state.get("editor_name") or "")
+author = a1.text_input(t("author"), value=ui.auth().get("name") or "")
 obs_date = a2.date_input(t("obs_date"), value=date.today(), format="DD.MM.YYYY")
 photo = st.file_uploader(t("upload_photo"), type=["jpg", "jpeg", "png", "webp"])
 if photo:
@@ -75,7 +75,7 @@ if st.button(t("add_btn"), type="primary"):
             except Exception:
                 b64, mime = base64.b64encode(photo.getvalue()).decode(), photo.type
         try:
-            r = db.write("api_add_observation", p_pwd=st.session_state.editor_pwd, p_taxon_id=taxon_id,
+            r = db.write("api_add_observation", p_pwd=ui.auth_token(), p_taxon_id=taxon_id,
                          p_taxon_name=taxon_name_free, p_subspecies=sub, p_desc_ru=desc_ru, p_desc_kk=desc_kk,
                          p_lat=lat, p_lng=lng, p_observed_on=str(obs_date), p_author=author,
                          p_photo_b64=b64, p_photo_mime=mime)
@@ -85,9 +85,5 @@ if st.button(t("add_btn"), type="primary"):
             st.error(str(e))
 
 st.markdown("---")
-st.markdown(f"**{t('user_obs')}**")
-u = db.user_observations(limit=50)
-if not u.empty:
-    st.dataframe(u[["id", "name_ru", "name_kk", "sci", "subspecies", "author", "observed_on", "region", "zone"]],
-                 hide_index=True, use_container_width=True)
+st.page_link("views/account.py", label=t("my_obs"), icon="📋")
 ui.footer()

@@ -68,10 +68,13 @@ if desc:
 else:
     st.info(t("no_description"))
 b1, b2 = st.columns([1, 1])
-if b1.button(t("wiki_btn"), use_container_width=True):
+if not ui.auth_token():
+    b1.caption(t("need_account"))
+    b1.page_link("views/account.py", label=t("btn_login"))
+elif b1.button(t("wiki_btn"), use_container_width=True):
     with st.spinner("Wikipedia…"):
         try:
-            w = db.fetch_wiki(tid)
+            w = db.fetch_wiki(tid, ui.auth_token())
             if w.get("message") and w["message"] != "ok":
                 st.warning(w["message"])
             elif w.get("description_ru") or w.get("description_kk"):
@@ -81,7 +84,7 @@ if b1.button(t("wiki_btn"), use_container_width=True):
                 st.info(t("wiki_none"))
         except Exception as e:
             st.error(str(e))
-if st.session_state.get("editor_pwd"):
+if ui.is_editor():
     with b2.popover(t("edit_taxon"), use_container_width=True):
         with st.form("edit_taxon"):
             cr = st.text_input(t("common_ru"), tx.get("common_name_ru") or "")
@@ -90,14 +93,14 @@ if st.session_state.get("editor_pwd"):
             dk = st.text_area(t("desc_kk"), tx.get("description_kk") or "", height=150)
             if st.form_submit_button(t("save")):
                 try:
-                    db.write("api_edit_taxon", p_pwd=st.session_state.editor_pwd, p_id=tid, p_common_ru=cr,
-                             p_common_kk=ck, p_desc_ru=dr, p_desc_kk=dk, p_editor=st.session_state.get("editor_name"))
+                    db.write("api_edit_taxon", p_pwd=ui.auth_token(), p_id=tid, p_common_ru=cr,
+                             p_common_kk=ck, p_desc_ru=dr, p_desc_kk=dk, p_editor=ui.auth()["name"])
                     st.success(t("saved"))
                     st.rerun()
                 except Exception as e:
                     st.error(str(e))
-else:
-    b2.caption(t("need_login"))
+elif ui.auth_token():
+    b2.caption(t("editors_only"))
 
 # ---- сезонность и территории ----
 MONTHS = months()

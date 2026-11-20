@@ -135,6 +135,31 @@ def obs_title(row) -> tuple[str, str]:
     return (common or sci_full), (sci_full if common else "")
 
 
+# ---------- вход пользователя ----------
+
+def auth() -> dict | None:
+    """Текущий пользователь: {token, login, name, role} или None."""
+    return st.session_state.get("auth")
+
+
+def auth_token() -> str | None:
+    a = auth()
+    return a["token"] if a else None
+
+
+def is_editor() -> bool:
+    a = auth()
+    return bool(a and a.get("role") in ("editor", "admin"))
+
+
+def action_buttons():
+    """Кнопки в шапке: добавить растение и вход/регистрация."""
+    c1, c2, _ = st.columns([1.2, 1.4, 3])
+    c1.page_link("views/add.py", label=t("btn_add_plant"))
+    a = auth()
+    c2.page_link("views/account.py", label=f"👤 {a['name']}" if a else t("btn_login"))
+
+
 # ---------- территория и язык ----------
 
 def scope() -> tuple[str, str]:
@@ -186,8 +211,11 @@ def sidebar():
         if p:
             st.markdown("---")
             st.caption(t("in_db", o=fmt(p.get("observations")), t=fmt(p.get("taxa"))))
-        if st.session_state.get("editor_pwd"):
-            st.success(f"✏️ {t('logged_in')}")
+        a = auth()
+        if a:
+            st.success(t("logged_as", n=a["name"]) + (" · ✏️" if is_editor() else ""))
+        else:
+            st.page_link("views/account.py", label=t("btn_login"))
         st.markdown(f"[iNaturalist ↗]({PROJECT_URL})")
 
 
@@ -209,6 +237,7 @@ def header():
           <div class="c"><div class="n">{fmt(s.get('observers'))}</div><div class="l">{t('c_observers')}</div></div>
           <div class="scope">📍 {esc(scope_label(kind, name))}</div>
         </div>""", unsafe_allow_html=True)
+    action_buttons()
     return s
 
 

@@ -152,5 +152,20 @@ def editor_login(pwd: str) -> bool:
         return False
 
 
-def fetch_wiki(taxon_id: int) -> dict:
-    return write("api_fetch_wiki", p_id=int(taxon_id)) or {}
+def register(login: str, pwd: str, name: str = "", email: str = "") -> dict:
+    return write("api_register", p_login=login, p_pwd=pwd, p_name=name or None, p_email=email or None)
+
+
+def login(login: str, pwd: str) -> dict:
+    return write("api_login", p_login=login, p_pwd=pwd)
+
+
+def logout(token: str):
+    try:
+        write("api_logout", p_token=token)
+    except Exception:
+        pass
+
+
+def fetch_wiki(taxon_id: int, auth: str) -> dict:
+    return write("api_fetch_wiki_auth", p_auth=auth, p_id=int(taxon_id)) or {}
