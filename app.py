@@ -4,7 +4,7 @@ import streamlit as st
 st.set_page_config(page_title="Флора Казахстана · Қазақстан флорасы", page_icon="🌿", layout="wide")
 
 from lib import ui  # noqa: E402
-from lib.i18n import t  # noqa: E402
+from lib.i18n import lang, t  # noqa: E402
 
 ui.setup()
 
@@ -17,6 +17,7 @@ pages = [
     st.Page("views/stats.py", title=t("nav_stats"), icon="📊", url_path="stats"),
     st.Page("views/territories.py", title=t("nav_territories"), icon="🗺️", url_path="territories"),
     st.Page("views/redbook.py", title=t("nav_redbook"), icon="🌺", url_path="redbook"),
+    st.Page("views/rb_species.py", title=("Қызыл кітап түрі" if lang() == "kk" else "Вид Красной книги"), icon="🌺", url_path="rb_species"),
     st.Page("views/taxon.py", title=t("nav_taxon"), icon="🔎", url_path="taxon"),
     st.Page("views/add.py", title=t("nav_add"), icon="➕", url_path="add"),
     st.Page("views/editor.py", title=t("nav_editor"), icon="✏️", url_path="editor"),
