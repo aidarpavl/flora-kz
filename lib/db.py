@@ -1,4 +1,4 @@
-"""Доступ к Supabase (PostgREST) только на чтение, с кешированием."""
+"""Доступ к Supabase: RPC-функции api_* (только чтение) с кешированием."""
 from __future__ import annotations
 
 import os
@@ -8,6 +8,7 @@ import requests
 import streamlit as st
 
 DEFAULT_URL = "https://ucrhksetkgmhoxdwwhnh.supabase.co"
+TTL = 600
 
 
 def _cfg() -> tuple[str, str]:
@@ -17,119 +18,100 @@ def _cfg() -> tuple[str, str]:
         key = st.secrets.get("SUPABASE_ANON_KEY")
     except Exception:
         pass
-    url = url or os.getenv("SUPABASE_URL") or DEFAULT_URL
-    key = key or os.getenv("SUPABASE_ANON_KEY")
+    url = (url or os.getenv("SUPABASE_URL") or DEFAULT_URL).strip().rstrip("/")
+    key = (key or os.getenv("SUPABASE_ANON_KEY") or "").strip()
     if not key:
-        st.error(
-            "Не задан ключ **SUPABASE_ANON_KEY**. Добавьте его в `.streamlit/secrets.toml` "
-            "или в Settings → Secrets на Streamlit Cloud."
-        )
+        st.error("Не задан ключ **SUPABASE_ANON_KEY**. Добавьте его в `.streamlit/secrets.toml` "
+                 "или в Settings → Secrets на Streamlit Cloud.")
         st.stop()
-    return url.rstrip("/"), key
+    return url, key
 
 
-def _headers() -> dict:
-    _, key = _cfg()
-    return {"apikey": key, "Authorization": f"Bearer {key}"}
-
-
-def _get(path: str, params: dict | None = None) -> list[dict]:
-    url, _ = _cfg()
-    r = requests.get(f"{url}/rest/v1/{path}", headers=_headers(), params=params, timeout=60)
+@st.cache_data(ttl=TTL, show_spinner=False)
+def rpc(fn: str, **params):
+    """Вызов функции public.<fn> через PostgREST. Возвращает разобранный JSON."""
+    url, key = _cfg()
+    headers = {"apikey": key, "Content-Type": "application/json"}
+    if not key.startswith("sb_"):
+        headers["Authorization"] = f"Bearer {key}"
+    payload = {k: v for k, v in params.items() if v is not None}
+    r = requests.post(f"{url}/rest/v1/rpc/{fn}", headers=headers, json=payload, timeout=90)
     if r.status_code >= 300:
-        st.error(f"Ошибка Supabase ({r.status_code}): {r.text[:300]}")
-        st.stop()
+        raise RuntimeError(f"Supabase {fn}: {r.status_code} {r.text[:300]}")
     return r.json()
 
 
-def _get_all(path: str, params: dict, page: int = 1000, cap: int = 50000) -> list[dict]:
-    out, offset = [], 0
-    while offset < cap:
-        data = _get(path, {**params, "limit": page, "offset": offset})
-        out += data
-        if len(data) < page:
-            break
-        offset += page
-    return out
+def safe(fn: str, default=None, **params):
+    try:
+        return rpc(fn, **params)
+    except Exception as e:  # показываем ошибку, но не роняем страницу
+        st.warning(f"Не удалось получить данные ({fn}): {e}")
+        return default
 
 
-def _rpc(fn: str, payload: dict) -> list[dict]:
-    url, _ = _cfg()
-    r = requests.post(f"{url}/rest/v1/rpc/{fn}", headers=_headers(), json=payload, timeout=60)
-    if r.status_code >= 300:
-        st.error(f"Ошибка Supabase ({r.status_code}): {r.text[:300]}")
-        st.stop()
-    return r.json()
+# ---------- удобные обёртки ----------
+
+def stats(kind, name) -> dict:
+    return safe("api_stats", {}, p_kind=kind, p_name=name) or {}
 
 
-TTL = 3600
+def species(kind, name, q="", limit=48, offset=0) -> tuple[pd.DataFrame, int]:
+    d = safe("api_species", {"total": 0, "rows": []}, p_kind=kind, p_name=name, p_q=q or None,
+             p_limit=limit, p_offset=offset)
+    return pd.DataFrame(d.get("rows") or []), int(d.get("total") or 0)
 
 
-@st.cache_data(ttl=TTL, show_spinner=False)
-def project_stats() -> dict:
-    d = _get("project_stats", {"select": "*"})
-    return d[0] if d else {"observations": 0, "species": 0, "observers": 0, "last_observed": None}
+def observers(kind, name, sort="observations", limit=50, offset=0) -> tuple[pd.DataFrame, int]:
+    d = safe("api_observers", {"total": 0, "rows": []}, p_kind=kind, p_name=name, p_sort=sort,
+             p_limit=limit, p_offset=offset)
+    return pd.DataFrame(d.get("rows") or []), int(d.get("total") or 0)
 
 
-@st.cache_data(ttl=TTL, show_spinner=False)
-def area_stats(kind: str) -> pd.DataFrame:
-    df = pd.DataFrame(_get("area_stats", {"select": "*", "kind": f"eq.{kind}", "order": "species.desc"}))
-    return df if not df.empty else pd.DataFrame(columns=["kind", "name", "species", "observations", "observers"])
+def identifiers(kind, name, limit=50, offset=0) -> tuple[pd.DataFrame, int]:
+    d = safe("api_identifiers", {"total": 0, "rows": []}, p_kind=kind, p_name=name,
+             p_limit=limit, p_offset=offset)
+    return pd.DataFrame(d.get("rows") or []), int(d.get("total") or 0)
 
 
-@st.cache_data(ttl=TTL, show_spinner=False)
-def areas(kind: str) -> list[dict]:
-    return _get("areas", {"select": "name,name_en,geojson", "kind": f"eq.{kind}", "order": "name"})
+def observations(kind, name, taxon=None, user=None, quality=None, q=None,
+                 date_from=None, date_to=None, limit=48, offset=0) -> tuple[pd.DataFrame, int]:
+    d = safe("api_observations", {"total": 0, "rows": []}, p_kind=kind, p_name=name, p_taxon=taxon,
+             p_user=user or None, p_quality=quality, p_q=q or None,
+             p_date_from=str(date_from) if date_from else None,
+             p_date_to=str(date_to) if date_to else None, p_limit=limit, p_offset=offset)
+    return pd.DataFrame(d.get("rows") or []), int(d.get("total") or 0)
 
 
-@st.cache_data(ttl=TTL, show_spinner=False)
-def family_stats(limit: int = 15) -> pd.DataFrame:
-    return pd.DataFrame(_get("family_stats", {"select": "*", "order": "species.desc", "limit": limit}))
+def map_cells(kind, name) -> pd.DataFrame:
+    d = safe("api_map_cells", [], p_kind=kind, p_name=name) or []
+    return pd.DataFrame(d, columns=["lng", "lat", "n"])
 
 
-@st.cache_data(ttl=TTL, show_spinner=False)
-def observer_stats(limit: int = 15) -> pd.DataFrame:
-    return pd.DataFrame(_get("observer_stats", {"select": "*", "order": "observations.desc", "limit": limit}))
+def map_points(kind, name, taxon=None, user=None, quality=None, limit=20000) -> pd.DataFrame:
+    d = safe("api_map_points", [], p_kind=kind, p_name=name, p_taxon=taxon, p_user=user or None,
+             p_quality=quality, p_limit=limit) or []
+    return pd.DataFrame(d, columns=["id", "lng", "lat", "title", "sci", "quality", "user", "date"])
 
 
-@st.cache_data(ttl=TTL, show_spinner=False)
-def species_list(kind: str = "all", name: str | None = None, q: str = "", limit: int = 48, offset: int = 0):
-    data = _rpc("species_list", {"p_kind": kind, "p_name": name, "p_q": q or None,
-                                 "p_limit": limit, "p_offset": offset})
-    df = pd.DataFrame(data)
-    total = int(df["total_count"].iloc[0]) if not df.empty else 0
-    return df, total
+def months(kind, name) -> pd.DataFrame:
+    return pd.DataFrame(safe("api_months", [], p_kind=kind, p_name=name) or [])
 
 
-@st.cache_data(ttl=TTL, show_spinner=False)
-def taxon(taxon_id: int) -> dict | None:
-    d = _get("taxa", {"select": "*", "id": f"eq.{taxon_id}"})
-    return d[0] if d else None
+def families(kind, name, limit=30) -> pd.DataFrame:
+    return pd.DataFrame(safe("api_families", [], p_kind=kind, p_name=name, p_limit=limit) or [])
 
 
-@st.cache_data(ttl=TTL, show_spinner=False)
-def search_taxa(q: str, limit: int = 30) -> pd.DataFrame:
-    q = q.replace(",", " ").replace("(", " ").replace(")", " ").strip()
-    return pd.DataFrame(_get("taxa", {
-        "select": "id,name,common_name_ru",
-        "or": f"(name.ilike.*{q}*,common_name_ru.ilike.*{q}*)",
-        "order": "name", "limit": limit,
-    }))
+def areas(kind) -> list[dict]:
+    return safe("api_areas", [], p_kind=kind) or []
 
 
-@st.cache_data(ttl=TTL, show_spinner=False)
-def taxon_areas(taxon_id: int) -> pd.DataFrame:
-    return pd.DataFrame(_get("taxon_areas", {"select": "kind,name,observations",
-                                             "taxon_id": f"eq.{taxon_id}", "order": "observations.desc"}))
+def taxon(taxon_id: int) -> dict:
+    return safe("api_taxon", {}, p_id=int(taxon_id)) or {}
 
 
-@st.cache_data(ttl=TTL, show_spinner=False)
-def observations(taxon_id: int | None = None, kind: str = "all", name: str | None = None,
-                 limit: int = 5000) -> pd.DataFrame:
-    params = {"select": "id,taxon_id,observed_on,lat,lng,quality_grade,user_login,photo_url,uri,region,zone",
-              "order": "id.desc"}
-    if taxon_id:
-        params["taxon_id"] = f"eq.{taxon_id}"
-    if kind in ("region", "zone") and name:
-        params[kind] = f"eq.{name}"
-    return pd.DataFrame(_get_all("observations", params, cap=limit))
+def search_taxa(q: str) -> pd.DataFrame:
+    return pd.DataFrame(safe("api_search_taxa", [], p_q=q, p_limit=30) or [])
+
+
+def progress() -> dict:
+    return safe("api_progress", {}) or {}

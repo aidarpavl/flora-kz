@@ -1,71 +1,49 @@
 # 🌿 Флора Казахстана
 
-Streamlit-приложение по данным проекта iNaturalist
-[«Флора Казахстана»](https://www.inaturalist.org/projects/flora-kazahstana?tab=species)
-с базой в Supabase и картой по **всему Казахстану**, **областям** и **природным зонам**.
+Клон страницы проекта iNaturalist [«Флора Казахстана»](https://www.inaturalist.org/projects/flora-kazahstana)
+на **Streamlit + Supabase** с разрезом по **всему Казахстану, областям и природным зонам**.
 
-| Страница | Что показывает |
+| Вкладка | Что показывает |
 |---|---|
-| Обзор | счётчики, карта зон, топ семейств и наблюдателей, популярные виды |
-| Виды | сетка карточек видов (как на iNaturalist) с фильтром по территории, поиском, CSV |
-| Карта | хороплет «число видов» по областям / зонам, точки наблюдений, топ видов территории |
-| Вид | фото, семейство, где встречается (области и зоны), карта находок |
+| Обзор | счётчики, последние наблюдения, лидерборды (наблюдения / виды / частые виды), требования, диаграмма качества, карта всех наблюдений |
+| Наблюдения | карта точек с подсказками, сетка фото или таблица; фильтры: вид, качество, наблюдатель, период |
+| Виды | карточки видов с фото и числом наблюдений, поиск, «Показать ещё», CSV |
+| Эксперты | рейтинг определителей (определения чужих наблюдений) |
+| Наблюдатели | рейтинг по наблюдениям или видам + карта наблюдений выбранного автора |
+| Статистика | по годам, сезонность, качество, семейства, динамика, сравнение территорий |
+| Карта территорий | хороплет областей / природных зон; клик выбирает территорию для всех вкладок |
+| Вид | фото, семейство, карта находок, сезонность, области и зоны, галерея, все наблюдения |
 
+Фильтр территории в боковой панели применяется ко всем вкладкам.
+
+## Как устроено
 ```
-app.py                     точка входа Streamlit
-views/                     страницы
-lib/db.py, lib/ui.py       доступ к Supabase и общие компоненты
-etl/load_inat.py           загрузка iNaturalist → Supabase
-supabase/schema.sql        таблицы, представления, функция species_list, RLS
-data/kz_natural_zones.geojson  схематичные полигоны природных зон
-.github/workflows/etl.yml  ежедневное обновление данных
-PROMPT.md                  супер-промт (ТЗ проекта)
+iNaturalist API ──(http, pg_cron каждые 3 мин)──► Supabase (PostgreSQL + PostGIS)
+                                                    ├─ observations, identifications, taxa, areas
+                                                    ├─ mv_* — сводки (обновляются каждые 10 мин)
+                                                    └─ api_* — RPC-функции (только чтение)
+                                                              ▲
+                                     Streamlit (app.py, views/) — anon-ключ
 ```
+Загрузка идёт **внутри базы**, без внешних ключей и GitHub Actions.
 
-## 1. Supabase
-1. Откройте проект `ucrhksetkgmhoxdwwhnh` → **SQL Editor** → **New query**, вставьте `supabase/schema.sql`, нажмите **Run**.
-2. **Project Settings → API**: скопируйте `Project URL`, `anon public` и `service_role` ключи.
-   `service_role` — секретный, только для ETL/GitHub Secrets, не вставляйте его в Streamlit.
-
-## 2. GitHub
-Репозиторий: https://github.com/aidarpavl/flora-kz
-
-**Settings → Secrets and variables → Actions → New repository secret**:
-- `SUPABASE_URL` = `https://ucrhksetkgmhoxdwwhnh.supabase.co`
-- `SUPABASE_SERVICE_KEY` = service_role ключ
-
-## 3. Загрузка данных
-**Через GitHub:** вкладка **Actions → «Загрузка данных iNaturalist → Supabase» → Run workflow**.
-Первая полная загрузка идёт примерно 1 секунду на 200 наблюдений (лимит API iNaturalist). Дальше данные
-обновляются сами: по воскресеньям — полностью, в остальные дни — только новые наблюдения.
-
-**Или локально:**
-```bash
-pip install -r etl/requirements.txt
-export SUPABASE_URL=https://ucrhksetkgmhoxdwwhnh.supabase.co
-export SUPABASE_SERVICE_KEY=...
-python etl/load_inat.py --max-pages 5   # тест на 1000 наблюдений
-python etl/load_inat.py                 # всё
-```
-Флаги: `--incremental`, `--quality research`, `--refresh-taxa`.
-
-## 4. Streamlit
-Локально:
-```bash
-pip install -r requirements.txt
-cp .streamlit/secrets.toml.example .streamlit/secrets.toml   # вставьте anon key
-streamlit run app.py
-```
-Streamlit Community Cloud: **share.streamlit.io → New app** → репозиторий `flora-kz`, ветка `main`, файл `app.py` →
-**Advanced settings → Secrets**: содержимое `secrets.toml.example` с вашим anon key → **Deploy**.
+## Развёртывание с нуля
+1. Supabase → SQL Editor: выполнить по очереди `supabase/schema.sql`, `supabase/etl_in_db.sql`, `supabase/v2_upgrade.sql`,
+   затем `select public.etl_load_areas();` — дальше данные загружаются сами.
+   Прогресс: `select * from etl_progress;`
+2. Streamlit Community Cloud → **New app** → репозиторий `aidarpavl/flora-kz`, ветка `main`, файл `app.py` →
+   **Advanced settings → Secrets**:
+   ```toml
+   SUPABASE_URL = "https://ucrhksetkgmhoxdwwhnh.supabase.co"
+   SUPABASE_ANON_KEY = "<anon public key из Supabase → Settings → API Keys → Legacy>"
+   ```
+3. Локально: `pip install -r requirements.txt && streamlit run app.py` (секреты в `.streamlit/secrets.toml`).
 
 ## Территории
-- **Области** берутся из [geoBoundaries KAZ ADM1](https://www.geoboundaries.org/). Если там старое деление
-  (без областей Абай, Жетісу, Ұлытау 2022 г.), положите актуальный GeoJSON в `data/kz_regions.geojson`
-  (свойства `name_ru`/`name_en`) — ETL возьмёт его автоматически.
-- **Природные зоны**: лесостепь, степь, полупустыня, пустыня + горные системы (Алтай, Саур-Тарбагатай,
-  Джунгарский Алатау, Северный Тянь-Шань, Каратау). Полигоны **схематичные** и обрезаются по границе страны;
-  для точной работы замените `data/kz_natural_zones.geojson` официальным шейп-файлом (свойства `name`, `name_en`,
-  `type` = `lat`/`mountain`, `priority`).
+- **Области** — geoBoundaries KAZ ADM1 (2017): без областей Абай, Жетісу, Ұлытау, образованных в 2022 г.
+- **Природные зоны** — схематичные полигоны (лесостепь, степь, полупустыня, пустыня + горы: Алтай,
+  Саур-Тарбагатай, Джунгарский Алатау, Северный Тянь-Шань, Каратау), обрезанные по границе страны.
+  Точнее — заменить полигоны в функции `etl_load_areas()` и выполнить её снова.
 
+`etl/load_inat.py` — запасной вариант загрузки с компьютера (нужен service_role-ключ).
 Данные — iNaturalist; фотографии принадлежат авторам наблюдений (лицензии CC).

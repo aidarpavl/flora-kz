@@ -1,65 +1,82 @@
+import altair as alt
+import pandas as pd
 import streamlit as st
 
 from lib import db, ui
 
-ui.hero("Вид", "Карточка вида: фото, распространение по областям и природным зонам")
+MONTHS = ["Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"]
+kind, name = ui.scope()
 
-q = st.text_input("Найти вид (латынь или русское название)", key="tx_q")
+q = st.text_input("🔎 Найти вид (латынь или русское название)", key="tx_q")
 if q:
     found = db.search_taxa(q)
     if found.empty:
         st.info("Не найдено.")
     else:
-        labels = {int(r["id"]): f'{r["name"]}' + (f' — {r["common_name_ru"]}' if r["common_name_ru"] else "")
-                  for _, r in found.iterrows()}
-        st.session_state["taxon_id"] = st.selectbox("Результаты", list(labels), format_func=labels.get)
+        opts = {int(r["id"]): f'{r.get("common_name_ru") or ""} — {r["name"]} ({ui.fmt(r.get("n") or 0)} набл.)'
+                for _, r in found.iterrows()}
+        sel = st.selectbox("Результаты", list(opts), format_func=opts.get)
+        st.query_params["id"] = str(sel)
 
-tid = st.session_state.get("taxon_id") or st.query_params.get("id")
+tid = st.query_params.get("id")
 if not tid:
-    st.info("Выберите вид поиском выше или кнопкой «Подробнее» на странице «Виды».")
+    st.info("Выберите вид поиском выше или нажмите на карточку вида на вкладке «Виды».")
     st.stop()
 
-t = db.taxon(int(tid))
+d = db.taxon(int(tid))
+t = d.get("taxon") or {}
 if not t:
     st.warning("Вид не найден в базе.")
     st.stop()
 
+title = t.get("common_name_ru") or t.get("name")
+st.markdown(f"## {ui.esc(title)}")
+st.markdown(f"*{ui.esc(t.get('name'))}*" + (f" · {ui.esc(t['common_name_en'])}" if t.get("common_name_en") else ""))
+
 c1, c2 = st.columns([1, 2])
 with c1:
     st.image(t.get("photo_url") or ui.PLACEHOLDER, use_container_width=True)
-with c2:
-    st.markdown(f"## {t.get('common_name_ru') or t['name']}")
-    st.markdown(f"*{t['name']}*" + (f" · {t['common_name_en']}" if t.get("common_name_en") else ""))
     st.markdown(f"**Семейство:** {t.get('family') or '—'}  \n**Род:** {t.get('genus') or '—'}")
-    links = [f"[iNaturalist]({t['inat_url']})"]
+    st.markdown(f"**Наблюдений:** {ui.fmt(d.get('observations'))}  \n**Наблюдателей:** {ui.fmt(d.get('observers'))}")
+    links = [f"[iNaturalist ↗]({t.get('inat_url') or ui.INAT + '/taxa/' + str(tid)})"]
     if t.get("wikipedia_url"):
-        links.append(f"[Википедия]({t['wikipedia_url']})")
+        links.append(f"[Википедия ↗]({t['wikipedia_url']})")
     st.markdown(" · ".join(links))
-    ar = db.taxon_areas(int(tid))
-    if not ar.empty:
-        r = ar[ar["kind"] == "region"]
-        z = ar[ar["kind"] == "zone"]
-        st.markdown(f"**Областей:** {len(r)} · **Природных зон:** {len(z)}")
-        a, b = st.columns(2)
-        a.dataframe(r[["name", "observations"]].rename(columns={"name": "Область", "observations": "Набл."}),
-                    hide_index=True, use_container_width=True)
-        b.dataframe(z[["name", "observations"]].rename(columns={"name": "Природная зона", "observations": "Набл."}),
-                    hide_index=True, use_container_width=True)
+with c2:
+    ui.observations_map("all", "all", taxon=int(tid), mode="points", key="taxon_map", height=430)
 
-obs = db.observations(taxon_id=int(tid), limit=5000)
-st.subheader(f"Находки на карте ({len(obs)})")
-layer_kind = st.radio("Подложка", ["Области", "Природные зоны"], horizontal=True, key="tx_layer")
-ui.choropleth("region" if layer_kind == "Области" else "zone", points=obs, height=460)
+m = pd.DataFrame(d.get("months") or [])
+a = pd.DataFrame(d.get("areas") or [])
+c3, c4 = st.columns(2)
+with c3:
+    st.markdown("**Сезонность (наблюдения по месяцам)**")
+    if not m.empty:
+        m = pd.DataFrame({"month": range(1, 13)}).merge(m, how="left").fillna(0)
+        m["Месяц"] = m["month"].map(lambda i: MONTHS[int(i) - 1])
+        st.altair_chart(alt.Chart(m).mark_bar(color=ui.GREEN).encode(
+            x=alt.X("Месяц:N", sort=MONTHS, title=None), y=alt.Y("n:Q", title="Наблюдений"),
+            tooltip=["Месяц", alt.Tooltip("n:Q", title="Наблюдений")]), use_container_width=True)
+with c4:
+    st.markdown("**Где встречается**")
+    if not a.empty:
+        r = a[a["kind"] == "region"][["name", "n"]].rename(columns={"name": "Область", "n": "Набл."})
+        z = a[a["kind"] == "zone"][["name", "n"]].rename(columns={"name": "Природная зона", "n": "Набл."})
+        x1, x2 = st.columns(2)
+        x1.dataframe(r, hide_index=True, use_container_width=True)
+        x2.dataframe(z, hide_index=True, use_container_width=True)
 
-if not obs.empty:
-    st.subheader("Последние наблюдения")
+photos = pd.DataFrame(d.get("photos") or [])
+if not photos.empty:
+    st.markdown("**Фотографии из наблюдений (исследовательский уровень)**")
     cols = st.columns(6)
-    for i, (_, o) in enumerate(obs.head(12).iterrows()):
+    for i, (_, p) in enumerate(photos.head(18).iterrows()):
         with cols[i % 6]:
-            if o.get("photo_url"):
-                st.image(o["photo_url"], use_container_width=True)
-            st.markdown(f"[{o.get('observed_on') or '—'}]({o['uri']})  \n"
-                        f"<span class='muted'>{o.get('user_login') or ''} · {o.get('region') or ''}</span>",
+            st.image(p["photo_url"], use_container_width=True)
+            st.markdown(f"<span class='muted'>[{p.get('observed_on') or '—'}]({p['uri']}) · {ui.esc(p.get('user_login'))}</span>",
                         unsafe_allow_html=True)
 
+st.markdown("**Все наблюдения вида**")
+df, total = db.observations(kind, name, taxon=int(tid), limit=24)
+st.caption(f"{ui.fmt(total)} наблюдений · {ui.scope_label(kind, name)}")
+ui.observation_cards(df)
 ui.footer()
