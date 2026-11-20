@@ -1,0 +1,6 @@
+-- v17 (применено в Supabase 2026-11-20):
+-- * api_me(p_token): вход по токену из cookie браузера (продлевает сессию на 30 дней)
+-- * rb_img_ok(url): мягкая проверка ссылки на фото (HEAD; отбрасываются только ошибки и HTML-страницы)
+-- * rb_photo_gbif(id): фото из GBIF только по https и после проверки rb_img_ok
+-- * rb_fix_gbif_photos(n): проверка сохранённых фото GBIF (cron 'flora-rb-photofix' снят)
+-- * update app_users set role = 'admin' where login = 'aidarpavl';
