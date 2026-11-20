@@ -5,6 +5,9 @@ st.set_page_config(page_title="Флора Казахстана · Қазақст
 
 from lib import ui  # noqa: E402
 from lib.i18n import lang, t  # noqa: E402
+from lib import basemaps  # noqa: E402
+
+ui.base_map = basemaps.base_map   # подложки: CARTO только с ключом CARTO_KEY, иначе OpenStreetMap
 
 ui.setup()
 
