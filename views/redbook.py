@@ -41,6 +41,20 @@ def txt(r, base):
     return r.get(a) or r.get(b) or ""
 
 
+def card_img(r):
+    """Фото: загруженное пользователем, иначе из iNaturalist/Википедии, иначе заглушка."""
+    if r.get("has_photo"):
+        return photo_uri(r["id"]) or ui.PLACEHOLDER
+    return r.get("photo_url") or ui.PLACEHOLDER
+
+
+def fam(r):
+    """Семейство на текущем языке + латынь."""
+    loc = (r.get("family_kk") or r.get("family_ru")) if KK else r.get("family_ru")
+    lat = r.get("family")
+    return f"{loc} ({lat})" if loc and lat else (loc or lat or "—")
+
+
 def photo_uri(sid):
     p = db.safe("api_rb_photo", {}, p_id=int(sid)) or {}
     return f"data:{p.get('mime') or 'image/jpeg'};base64,{p['data']}" if p.get("data") else None
@@ -66,6 +80,15 @@ def add_rb_layers(m, data_points, data_ranges, highlight=None):
         folium.GeoJson(g["geojson"], style_function=lambda f, c=c: {"color": c, "weight": 2, "fillColor": c,
                                                                       "fillOpacity": 0.25},
                        tooltip=f"{nm(g)} · {g.get('latin')}").add_to(m)
+    if len(data_points) > 400:          # много точек — быстрые кластеры
+        from folium.plugins import FastMarkerCluster
+        cb = """function (row) {
+          var m = L.circleMarker(new L.LatLng(row[0], row[1]), {radius: 6, color: '#fff', weight: 1,
+                                 fillColor: row[3], fillOpacity: 0.95});
+          m.bindTooltip(row[2]); return m; }"""
+        FastMarkerCluster([[p["lat"], p["lng"], p.get("title") or "", cat_color(p.get("category"))] for p in data_points],
+                          callback=cb, options={"maxClusterRadius": 40, "disableClusteringAtZoom": 9}).add_to(m)
+        return
     for p in data_points:
         c = cat_color(p.get("category"))
         folium.CircleMarker([p["lat"], p["lng"]], radius=7, color="#fff", weight=2, fill=True, fill_color=c,
@@ -95,13 +118,14 @@ with tab_cat:
     else:
         parts = []
         for _, r in rows.iterrows():
-            img = photo_uri(r["id"]) if r.get("has_photo") else ui.PLACEHOLDER
+            img = card_img(r)
             parts.append(
                 f'<div class="card"><div class="ph" style="background-image:url(\'{img}\')">'
                 f'<div class="badge" style="background:{cat_color(r.get("category"))}">{ui.esc(cat_label(r.get("category")))}'
                 f' · 📍{int(r["n_points"])} · ⬟{int(r["n_ranges"])}</div></div>'
                 f'<div class="b"><div class="cn">{ui.esc(nm(r))}</div><div class="sn">{ui.esc(r["latin"])}'
-                f'{" (" + ui.esc(r["parent_latin"]) + ")" if r.get("parent_latin") else ""}</div></div></div>')
+                f'{" (" + ui.esc(r["parent_latin"]) + ")" if r.get("parent_latin") else ""}</div>'
+                f'<div class="sn" style="font-style:normal;color:#888">{ui.esc(fam(r))}</div></div></div>')
         st.markdown(f'<div class="grid">{"".join(parts)}</div>', unsafe_allow_html=True)
 
     st.markdown(f"#### {t('obs_map')}")
@@ -125,7 +149,9 @@ with tab_card:
         s = d.get("species") or {}
         c1, c2 = st.columns([1, 2])
         with c1:
-            st.image(photo_uri(sid) if s.get("has_photo") else ui.PLACEHOLDER, use_container_width=True)
+            st.image(card_img(s), use_container_width=True)
+            if s.get("photo_attr") and not s.get("has_photo"):
+                st.caption("📷 " + s["photo_attr"])
             st.markdown(f'<span style="padding:3px 10px;border-radius:10px;background:{cat_color(s.get("category"))};'
                         f'color:#fff">{ui.esc(cat_label(s.get("category")))}</span>', unsafe_allow_html=True)
             st.markdown(f"## {ui.esc(nm(s))}")
@@ -134,11 +160,16 @@ with tab_card:
             rank = {"species": t("r_species"), "subspecies": t("r_subspecies"), "variety": t("r_variety"),
                     "form": t("r_form")}.get(s.get("rank"), s.get("rank"))
             st.markdown(f"**{t('taxon_rank')}:** {rank}" + (f"  \n**{t('parent')}:** *{s['parent_latin']}*" if s.get("parent_latin") else "")
-                        + f"  \n**{t('family')}:** {s.get('family') or '—'}  \n**{t('author')}:** {s.get('author') or '—'}")
+                        + f"  \n**{t('family')}:** {fam(s)}"
+                        + f"  \n**{'Туыс' if KK else 'Род'}:** *{s.get('genus') or '—'}*"
+                        + f"  \n**{'Түр' if KK else 'Вид'}:** *{s.get('latin')}*"
+                        + f"  \n**{t('author')}:** {s.get('author') or '—'}")
             links = []
             wiki = (s.get("wiki_kk_url") or s.get("wiki_ru_url")) if KK else s.get("wiki_ru_url")
             if wiki:
                 links.append(f"[Wikipedia ↗]({wiki})")
+            if s.get("gbif_key"):
+                links.append(f"[GBIF ↗](https://www.gbif.org/species/{s['gbif_key']})")
             if s.get("taxon_id"):
                 links.append(f"[{t('rb_in_inat')} →]({ui.taxon_link(s['taxon_id'])})")
             st.markdown(" · ".join(links))
