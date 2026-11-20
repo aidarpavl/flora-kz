@@ -325,19 +325,20 @@ def base_map(center=None, zoom=None, height_hint=None) -> folium.Map:
                      attr=carto, name="🗺️ Voyager (OSM)", subdomains="abcd", max_zoom=20).add_to(m)
     # 2. OpenStreetMap стандарт
     folium.TileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-                     attr="&copy; OpenStreetMap contributors", name="🌍 OpenStreetMap", max_zoom=19).add_to(m)
+                     attr="&copy; OpenStreetMap contributors", name="🌍 OpenStreetMap", max_zoom=19, show=False).add_to(m)
     # 3. Светлая Carto Positron
     folium.TileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
                      attr=carto, name=f"⚪ {'Ашық' if lang() == 'kk' else 'Светлая'} (Carto Positron)",
-                     subdomains="abcd", max_zoom=20).add_to(m)
+                     subdomains="abcd", max_zoom=20, show=False).add_to(m)
     # 4. 2ГИС (растровые тайлы)
     folium.TileLayer("https://tile{s}.maps.2gis.com/tiles?x={x}&y={y}&z={z}&v=1.1",
-                     attr="&copy; 2ГИС", name="🟢 2ГИС", subdomains="0123", max_zoom=18).add_to(m)
+                     attr="&copy; 2ГИС", name="🟢 2ГИС", subdomains="0123", max_zoom=18, show=False).add_to(m)
     # дополнительно: спутник и рельеф
     folium.TileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-                     attr="Esri, Maxar, Earthstar Geographics", name=f"🛰️ {t('satellite')}", max_zoom=19).add_to(m)
-    folium.TileLayer("OpenTopoMap", name=f"⛰️ {t('terrain')}", max_zoom=17,
-                     attr="&copy; OpenStreetMap, SRTM | &copy; OpenTopoMap (CC-BY-SA)").add_to(m)
+                     attr="Esri, Maxar, Earthstar Geographics", name=f"🛰️ {t('satellite')}", max_zoom=19, show=False).add_to(m)
+    folium.TileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png", name=f"⛰️ {t('terrain')}", max_zoom=17,
+                     subdomains="abc", attr="&copy; OpenStreetMap, SRTM | &copy; OpenTopoMap (CC-BY-SA)",
+                     show=False).add_to(m)
     # подписи Voyager поверх дорог, зон и областей (отдельная панель выше слоёв данных)
     folium.map.CustomPane("labels", z_index=650, pointer_events=False).add_to(m)
     folium.TileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png",
