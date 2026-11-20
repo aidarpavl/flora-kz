@@ -9,6 +9,10 @@ from lib.i18n import lang, t
 
 KZ_CENTER, KZ_ZOOM = [48.2, 67.5], 5
 ESRI = "https://server.arcgisonline.com/ArcGIS/rest/services"
+PLACEHOLDER = ("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%20200%20150%22%3E"
+               "%3Crect%20width%3D%22200%22%20height%3D%22150%22%20fill%3D%22%23eef2e6%22/%3E"
+               "%3Cpath%20d%3D%22M100%20120%20C70%20100%2065%2060%20100%2030%20C135%2060%20130%20100%20100%20120Z%22%20fill%3D%22%2374AC00%22/%3E"
+               "%3Cpath%20d%3D%22M100%20120%20L100%2045%22%20stroke%3D%22%23eef2e6%22%20stroke-width%3D%223%22/%3E%3C/svg%3E")
 
 
 def carto_key() -> str:
