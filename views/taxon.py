@@ -48,8 +48,6 @@ with c1:
     st.markdown(f"**{t('observations_n').capitalize()}:** {ui.fmt(d.get('observations'))}  \n"
                 f"**{t('observers_n')}:** {ui.fmt(d.get('observers'))}")
     links = []
-    if tid > 0:
-        links.append(f"[iNaturalist ↗]({tx.get('inat_url') or ui.INAT + '/taxa/' + str(tid)})")
     wiki = tx.get("wiki_kk_url") if kk and tx.get("wiki_kk_url") else (tx.get("wiki_ru_url") or tx.get("wikipedia_url"))
     if wiki:
         links.append(f"[Wikipedia ↗]({wiki})")
