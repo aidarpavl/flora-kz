@@ -24,12 +24,10 @@ else:
         t("rank"): range((page - 1) * PAGE + 1, (page - 1) * PAGE + 1 + len(df)),
         t("nav_identifiers"): df["user_login"],
         t("identifications"): df["identifications"],
-        t("profile"): ui.INAT + "/people/" + df["user_login"],
     })
     st.dataframe(tb, hide_index=True, use_container_width=True, height=700, column_config={
         t("identifications"): st.column_config.ProgressColumn(format="%d", min_value=0,
-                                                              max_value=int(df["identifications"].max())),
-        t("profile"): st.column_config.LinkColumn(display_text="iNat ↗")})
+                                                              max_value=int(df["identifications"].max()))})
     pages = max(1, math.ceil(total / PAGE))
     n1, n2, n3 = st.columns([1, 2, 1])
     n2.markdown(f"<div style='text-align:center'>{t('total', n=ui.fmt(total), p=page, pp=pages)}</div>",
