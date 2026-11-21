@@ -22,11 +22,11 @@ obs_top, _ = db.observers(kind, name, "observations", 6)
 sp_top, _ = db.observers(kind, name, "species", 6)
 taxa_top, _ = db.species(kind, name, "", 6)
 with b1:
-    ui.board(t("most_obs"), [(r.get("icon"), r["user_login"], f"{ui.INAT}/people/{r['user_login']}",
+    ui.board(t("most_obs"), [(r.get("icon"), r["user_login"], "",
                               ui.fmt(r["observations"])) for _, r in obs_top.iterrows()])
     st.page_link("views/observers.py", label=t("see_all"))
 with b2:
-    ui.board(t("most_species"), [(r.get("icon"), r["user_login"], f"{ui.INAT}/people/{r['user_login']}",
+    ui.board(t("most_species"), [(r.get("icon"), r["user_login"], "",
                                   ui.fmt(r["species"])) for _, r in sp_top.iterrows()])
     st.page_link("views/observers.py", label=t("see_all"))
 with b3:
