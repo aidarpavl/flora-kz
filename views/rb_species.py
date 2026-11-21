@@ -115,7 +115,7 @@ if not EDIT:
             if s.get("gbif_key"):
                 links.append(f"[GBIF ↗](https://www.gbif.org/species/{s['gbif_key']})")
             if s.get("taxon_id"):
-                links.append(f"[iNaturalist →]({ui.taxon_link(s['taxon_id'])})")
+                links.append(f"[{L('Наблюдения вида', 'Түрдің бақылаулары')} →]({ui.taxon_link(s['taxon_id'])})")
             st.markdown(" · ".join(links))
         with c2:
             m = ui.base_map()
