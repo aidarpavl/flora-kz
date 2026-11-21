@@ -1,0 +1,7 @@
+-- v18 (применено в Supabase 2026-11-21):
+-- * api_rb_replace_points(p_auth, p_species, p_points jsonb): заменяет все точки вида (проверка координат 35–60 / 40–95)
+-- * api_editor_session(p_pwd): код редактора -> сессия на 30 дней (пользователь editor_code, роль admin)
+-- * размер БД: удалены дублирующие индексы observations (obs_zone_id_idx, obs_region_id_idx, obs_name_trgm,
+--   obs_cname_trgm, obs_quality_id_idx, obs_zone_idx, obs_region_idx, obs_user_idx, obs_taxon_idx),
+--   reindex observations / identifications / mv_points: 665 MB -> 390 MB (лимит бесплатного тарифа 500 MB)
+-- * cron 'flora-reindex' по воскресеньям 22:23 UTC — переиндексация, чтобы индексы не разрастались
