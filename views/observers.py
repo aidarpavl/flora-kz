@@ -29,13 +29,11 @@ else:
         t("observer"): df["user_login"],
         c_obs: df["observations"],
         c_sp: df["species"],
-        t("profile"): ui.INAT + "/people/" + df["user_login"],
     })
     main = c_sp if sort == "species" else c_obs
     st.dataframe(tb, hide_index=True, use_container_width=True, height=700, column_config={
         t("avatar"): st.column_config.ImageColumn(width="small"),
-        main: st.column_config.ProgressColumn(format="%d", min_value=0, max_value=int(tb[main].max())),
-        t("profile"): st.column_config.LinkColumn(display_text="iNat ↗")})
+        main: st.column_config.ProgressColumn(format="%d", min_value=0, max_value=int(tb[main].max()))})
     pages = max(1, math.ceil(total / PAGE))
     n1, n2, n3 = st.columns([1, 2, 1])
     n2.markdown(f"<div style='text-align:center'>{t('total', n=ui.fmt(total), p=page, pp=pages)}</div>",
