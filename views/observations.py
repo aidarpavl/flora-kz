@@ -62,11 +62,9 @@ else:
             t("region"): df["region"],
             t("zone"): df["zone"],
             t("quality"): df["quality_grade"].map(ql),
-            t("link"): df["uri"],
         })
         st.dataframe(tb, hide_index=True, use_container_width=True, height=600,
-                     column_config={t("photo"): st.column_config.ImageColumn(width="small"),
-                                    t("link"): st.column_config.LinkColumn(display_text="iNat ↗")})
+                     column_config={t("photo"): st.column_config.ImageColumn(width="small")})
     n1, _, n3 = st.columns([1, 2, 1])
     if n1.button(t("prev"), disabled=page <= 1, use_container_width=True):
         st.session_state[key] = page - 1
