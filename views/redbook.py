@@ -17,6 +17,30 @@ from lib.rb import CATS, cat_label, cat_color, nm, txt, card_img, fam, photo_uri
 from lib.rb import add_layers as add_rb_layers  # noqa: E402
 
 
+@st.cache_data(ttl=600, show_spinner=False)
+def thumb_uri(sid: int, stamp: str):
+    """Уменьшенная копия загруженного фото для карточки (полное фото — на странице вида)."""
+    full = photo_uri(sid)
+    if not full:
+        return None
+    try:
+        from PIL import Image
+        raw = base64.b64decode(full.split(",", 1)[1])
+        im = Image.open(io.BytesIO(raw)).convert("RGB")
+        im.thumbnail((400, 400))
+        buf = io.BytesIO()
+        im.save(buf, format="JPEG", quality=80)
+        return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+    except Exception:
+        return full
+
+
+def catalog_img(r):
+    if r.get("has_photo"):
+        return thumb_uri(int(r["id"]), str(r.get("updated_at") or "")) or ui.PLACEHOLDER
+    return r.get("photo_url") or ui.PLACEHOLDER
+
+
 kind, name = ui.scope()
 ui.header()
 st.subheader(f"🌺 {t('rb_title')}")
@@ -40,10 +64,11 @@ with tab_cat:
     else:
         parts = []
         for _, r in rows.iterrows():
-            img = card_img(r)
+            img = ui.esc(catalog_img(r))
             parts.append(
                 f'<div class="card"><a href="{page_link(r["id"])}" target="_self">'
-                f'<div class="ph" style="background-image:url(\'{img}\')">'
+                f'<div class="ph"><img src="{img}" alt="" loading="lazy" '
+                f'style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">'
                 f'<div class="badge" style="background:{cat_color(r.get("category"))}">{ui.esc(cat_label(r.get("category")))}'
                 f' · 📍{int(r["n_points"])} · ⬟{int(r["n_ranges"])}</div></div>'
                 f'<div class="b"><div class="cn">{ui.esc(nm(r))}</div><div class="sn">{ui.esc(r["latin"])}'
