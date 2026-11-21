@@ -225,7 +225,6 @@ def sidebar():
             st.success(t("logged_as", n=a["name"]) + (" · ✏️" if is_editor() else ""))
         else:
             safe_link("views/account.py", t("btn_login"), "./account")
-        st.markdown(f"[iNaturalist ↗]({PROJECT_URL})")
 
 
 def setup():
@@ -237,8 +236,7 @@ def header():
     s = db.stats(kind, name)
     st.markdown(
         f"""<div class="banner"><div class="l"><div class="t">{esc(t('title'))}</div></div>
-        <div class="r"><h3>{esc(t('about'))}</h3>{esc(t('about_text'))}<br><br>
-        <a href="{PROJECT_URL}" target="_blank">{esc(t('open_inat'))}</a></div></div>
+        <div class="r"><h3>{esc(t('about'))}</h3>{esc(t('about_text'))}</div></div>
         <div class="counters">
           <div class="c"><div class="n">{fmt(s.get('observations'))}</div><div class="l">{t('c_observations')}</div></div>
           <div class="c"><div class="n">{fmt(s.get('species'))}</div><div class="l">{t('c_species')}</div></div>
@@ -284,6 +282,15 @@ def species_cards(df: pd.DataFrame):
     st.markdown(f'<div class="grid">{"".join(parts)}</div>', unsafe_allow_html=True)
 
 
+def obs_link(r) -> str:
+    """Карточка наблюдения ведёт на страницу вида внутри сайта (без внешних ссылок)."""
+    tid = r.get("obs_taxon_id") or r.get("taxon_id")
+    try:
+        return taxon_link(int(tid)) if tid and not pd.isna(tid) else "#"
+    except (TypeError, ValueError):
+        return "#"
+
+
 def observation_cards(df: pd.DataFrame):
     if df.empty:
         st.info(t("not_found"))
@@ -295,7 +302,7 @@ def observation_cards(df: pd.DataFrame):
         av = r.get("user_icon") or USER_PLACEHOLDER
         meta = f'🛡 {fmt(r.get("identifications_count") or 0)} · {ago(r.get("created_at") or r.get("observed_on"))}'
         parts.append(
-            f'<div class="obs"><a href="{esc(r.get("uri"))}" target="_blank" style="text-decoration:none;color:inherit">'
+            f'<div class="obs"><a href="{obs_link(r)}" target="_self" style="text-decoration:none;color:inherit">'
             f'<div class="ph" style="background-image:url(\'{esc(img)}\')">'
             f'<div class="av" style="background-image:url(\'{esc(av)}\')" title="{esc(r.get("user_login"))}"></div></div>'
             f'<div class="b"><div class="cn">{esc(cn)}</div><div class="sn">{esc(sn)}</div>'
@@ -304,10 +311,13 @@ def observation_cards(df: pd.DataFrame):
 
 
 def board(title: str, rows: list[tuple], square=False):
+    def lbl(link, label):
+        if not link:
+            return f'<span>{esc(label)}</span>'
+        return f'<a href="{esc(link)}" target="{"_self" if str(link).startswith("./") else "_blank"}">{esc(label)}</a>'
     items = "".join(
         f'<div class="row"><img class="{"sq" if square else ""}" src="{esc(img) or USER_PLACEHOLDER}">'
-        f'<a href="{esc(link)}" target="{"_self" if str(link).startswith("./") else "_blank"}">{esc(label)}</a>'
-        f'<span class="v">{esc(val)}</span></div>'
+        + lbl(link, label) + f'<span class="v">{esc(val)}</span></div>'
         for img, label, link, val in rows)
     st.markdown(f'<div class="board"><h4>{esc(title)}</h4>{items or "<span class=muted>" + t("no_data") + "</span>"}</div>',
                 unsafe_allow_html=True)
@@ -387,8 +397,7 @@ _POINT_CB = """
 function (row) {
   var c = row[5] == 'research' ? '#74AC00' : (row[5] == 'needs_id' ? '#f5c400' : '#bbbbbb');
   var m = L.circleMarker(new L.LatLng(row[0], row[1]), {radius: 6, color: '#fff', weight: 1, fillColor: c, fillOpacity: 0.95});
-  m.bindPopup('<b>' + row[2] + '</b><br><i>' + (row[3] || '') + '</i><br>' + (row[6] || '') + ' · ' + (row[7] || '') +
-              '<br><a href="https://www.inaturalist.org/observations/' + row[4] + '" target="_blank">iNaturalist ↗</a>');
+  m.bindPopup('<b>' + row[2] + '</b><br><i>' + (row[3] || '') + '</i><br>' + (row[6] || '') + ' · ' + (row[7] || ''));
   return m;
 }
 """
