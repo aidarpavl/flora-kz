@@ -15,6 +15,10 @@ from lib.i18n import area_name, lang, t
 KK = lang() == "kk"
 from lib.rb import CATS, cat_label, cat_color, nm, txt, card_img, fam, photo_uri, to_b64, page_link  # noqa: E402
 from lib.rb import add_layers as add_rb_layers  # noqa: E402
+from lib import rb  # noqa: E402
+
+KING = rb.kingdom()
+ANIMAL = rb.animal()
 
 
 @st.cache_data(ttl=600, show_spinner=False)
@@ -41,10 +45,22 @@ def catalog_img(r):
     return r.get("photo_url") or ui.PLACEHOLDER
 
 
+def sub(r):
+    """Подпись под названием: для животных — класс · отряд, для растений — семейство."""
+    if ANIMAL:
+        c = (r.get("class_kk") or r.get("class_ru")) if KK else r.get("class_ru")
+        o = (r.get("order_kk") or r.get("order_ru")) if KK else r.get("order_ru")
+        return " · ".join(x for x in (c, o, r.get("family")) if x) or "—"
+    return fam(r)
+
+
 kind, name = ui.scope()
 ui.header()
-st.subheader(f"🌺 {t('rb_title')}")
-st.caption(t("rb_intro"))
+st.subheader(f"{rb.icon()} {rb.title()}")
+st.caption(rb.L("Виды и подвиды животных из Красной книги РК: систематика (тип, класс, отряд, семейство), фото, "
+                "описания на двух языках и места обитания на карте. Редакторы могут всё изменять."
+                , "ҚР Қызыл кітабына енген жануарлар түрлері мен түр тармақтары: жүйелеу, сурет, екі тілдегі сипаттама "
+                "және картадағы мекендеу орындары. Редакторлар бәрін өзгерте алады.") if ANIMAL else t("rb_intro"))
 st.markdown(" ".join(f'<span style="display:inline-block;margin:0 10px 6px 0;padding:2px 10px;border-radius:10px;'
                      f'background:{v[2]};color:#fff;font-size:.82rem">{v[1] if KK else v[0]}</span>'
                      for v in CATS.values()), unsafe_allow_html=True)
@@ -57,7 +73,7 @@ with tab_cat:
     q = f1.text_input(t("species_search"), key="rb_q")
     cat = f2.selectbox(t("rb_category"), [""] + list(CATS), format_func=lambda c: cat_label(c) if c else t("rb_cat_any"),
                        key="rb_cat")
-    rows = pd.DataFrame(db.safe("api_rb_list", [], p_kind=kind, p_name=name, p_q=q or None, p_category=cat or None) or [])
+    rows = pd.DataFrame(db.safe("api_rb_list", [], p_kind=kind, p_name=name, p_q=q or None, p_category=cat or None, p_kingdom=KING) or [])
     st.markdown(f"**{ui.fmt(len(rows))}** {t('rb_species_n')} · {ui.scope_label(kind, name)}")
     if rows.empty:
         st.info(t("rb_empty"))
@@ -73,11 +89,11 @@ with tab_cat:
                 f' · 📍{int(r["n_points"])} · ⬟{int(r["n_ranges"])}</div></div>'
                 f'<div class="b"><div class="cn">{ui.esc(nm(r))}</div><div class="sn">{ui.esc(r["latin"])}'
                 f'{" (" + ui.esc(r["parent_latin"]) + ")" if r.get("parent_latin") else ""}</div>'
-                f'<div class="sn" style="font-style:normal;color:#888">{ui.esc(fam(r))}</div></div></a></div>')
+                f'<div class="sn" style="font-style:normal;color:#888">{ui.esc(sub(r))}</div></div></a></div>')
         st.markdown(f'<div class="grid">{"".join(parts)}</div>', unsafe_allow_html=True)
 
     st.markdown(f"#### {t('obs_map')}")
-    mp = db.safe("api_rb_map", {}, p_kind=kind, p_name=name, p_auth=ui.auth_token()) or {}
+    mp = db.safe("api_rb_map", {}, p_kind=kind, p_name=name, p_auth=ui.auth_token(), p_kingdom=KING) or {}
     pts = [{"lat": p[0], "lng": p[1], "category": p[6],
             "title": f"{(p[5] or p[4] or p[3]) if KK else (p[4] or p[3])} · {p[3]}"} for p in mp.get("points", [])]
     m = ui.base_map()
@@ -87,7 +103,7 @@ with tab_cat:
 
 # ======================= КАРТОЧКА =======================
 with tab_card:
-    allrows = pd.DataFrame(db.safe("api_rb_list", []) or [])
+    allrows = pd.DataFrame(db.safe("api_rb_list", [], p_kingdom=KING) or [])
     if allrows.empty:
         st.info(t("rb_empty"))
     else:
@@ -110,6 +126,7 @@ with tab_card:
             rank = {"species": t("r_species"), "subspecies": t("r_subspecies"), "variety": t("r_variety"),
                     "form": t("r_form")}.get(s.get("rank"), s.get("rank"))
             st.markdown(f"**{t('taxon_rank')}:** {rank}" + (f"  \n**{t('parent')}:** *{s['parent_latin']}*" if s.get("parent_latin") else "")
+                        + (f"  \n{rb.tax_lines(s)}" if ANIMAL and rb.tax_lines(s) else "")
                         + f"  \n**{t('family')}:** {fam(s)}"
                         + f"  \n**{'Туыс' if KK else 'Род'}:** *{s.get('genus') or '—'}*"
                         + f"  \n**{'Түр' if KK else 'Вид'}:** *{s.get('latin')}*"
@@ -149,7 +166,7 @@ with tab_edit:
         st.info(t("need_account"))
         st.page_link("views/account.py", label=t("btn_login"))
     else:
-        allrows = pd.DataFrame(db.safe("api_rb_list", []) or [])
+        allrows = pd.DataFrame(db.safe("api_rb_list", [], p_kingdom=KING) or [])
         opts = {0: t("rb_new")}
         if not allrows.empty:
             opts.update({int(r["id"]): f'{nm(r)} — {r["latin"]}' for _, r in allrows.iterrows()})
@@ -187,6 +204,9 @@ with tab_edit:
                              p_rank=rank, p_parent_latin=parent, p_family=family, p_category=cat,
                              p_desc_ru=d_ru, p_desc_kk=d_kk, p_habitat_ru=h_ru, p_habitat_kk=h_kk,
                              p_protect_ru=p_ru, p_protect_kk=p_kk, p_photo_b64=b64, p_photo_mime=mime)
+                if ANIMAL and not sid:   # новый вид в разделе животных
+                    db.write("api_rb_save_ext", p_auth=A, p_id=int(r["id"]), p_fields={"kingdom": "animalia"},
+                             p_photo_b64=None, p_photo_mime=None)
                 st.success(f"{t('saved')} (id {r.get('id')})")
                 st.session_state["rb_pending"] = int(r["id"])
                 st.rerun()
