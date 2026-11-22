@@ -23,6 +23,10 @@ pages = [
     st.Page("views/territories.py", title=t("nav_territories"), icon="🗺️", url_path="territories"),
     st.Page("views/redbook.py", title=t("nav_redbook"), icon="🌺", url_path="redbook"),
     st.Page("views/rb_species.py", title=("Қызыл кітап түрі" if lang() == "kk" else "Вид Красной книги"), icon="🌺", url_path="rb_species"),
+    st.Page("views/redbook_animals.py", title=("Қызыл кітап: жануарлар" if lang() == "kk" else "Животные Красной книги"),
+            icon="🐾", url_path="redbook_animals"),
+    st.Page("views/rb_animal.py", title=("Қызыл кітап жануары" if lang() == "kk" else "Животное Красной книги"), icon="🐾",
+            url_path="rb_animal"),
     st.Page("views/taxon.py", title=t("nav_taxon"), icon="🔎", url_path="taxon"),
     st.Page("views/add.py", title=t("nav_add"), icon="➕", url_path="add"),
     st.Page("views/editor.py", title=t("nav_editor"), icon="✏️", url_path="editor"),
@@ -34,4 +38,6 @@ except TypeError:
     nav = st.navigation(pages)
 ui.sidebar()   # после st.navigation: ссылки st.page_link работают только на зарегистрированные страницы
 session.sync_cookie()
+# раздел Красной книги: растения или животные (одни и те же страницы, разные данные)
+st.session_state["rb_kingdom"] = "animalia" if getattr(nav, "url_path", "") in ("redbook_animals", "rb_animal") else "plantae"
 nav.run()
