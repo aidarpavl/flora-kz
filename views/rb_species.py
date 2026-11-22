@@ -17,12 +17,14 @@ def L(ru, kz):
     return kz if KK else ru
 
 
-st.markdown(f'<a href="./redbook" target="_self">← 🌺 {ui.esc(t("rb_title"))}</a>', unsafe_allow_html=True)
+KING = rb.kingdom()
+ANIMAL = rb.animal()
+st.markdown(f'<a href="{rb.list_url()}" target="_self">← {rb.icon()} {ui.esc(rb.title())}</a>', unsafe_allow_html=True)
 
 # ---------- выбор вида ----------
 sid = st.query_params.get("id")
 if not sid:
-    allrows = pd.DataFrame(db.safe("api_rb_list", []) or [])
+    allrows = pd.DataFrame(db.safe("api_rb_list", [], p_kingdom=KING) or [])
     if allrows.empty:
         st.info(t("rb_empty"))
         st.stop()
@@ -102,6 +104,8 @@ if not EDIT:
                 st.caption("📷 " + s["photo_attr"])
             rank = {"species": t("r_species"), "subspecies": t("r_subspecies"), "variety": t("r_variety"),
                     "form": t("r_form")}.get(s.get("rank"), s.get("rank"))
+            if ANIMAL and rb.tax_lines(s):
+                st.markdown(rb.tax_lines(s))
             st.markdown(f"**{t('family')}:** {rb.fam(s)}  \n**{t('genus')}:** *{s.get('genus') or '—'}*  \n"
                         f"**{L('Вид', 'Түр')}:** *{s.get('latin')}*  \n**{t('taxon_rank')}:** {rank}"
                         + (f"  \n**{t('parent')}:** *{s['parent_latin']}*" if s.get("parent_latin") else "")
@@ -150,6 +154,8 @@ if not EDIT:
 FIELDS = ["latin", "rank", "name_ru", "name_kk", "parent_latin", "genus", "family", "family_ru", "family_kk",
           "category", "description_ru", "description_kk", "habitat_ru", "habitat_kk", "protection_ru",
           "protection_kk", "wiki_ru_url", "wiki_kk_url", "photo_url", "photo_attr"]
+if ANIMAL:
+    FIELDS += ["phylum", "phylum_ru", "phylum_kk", "class_lat", "class_ru", "class_kk", "order_lat", "order_ru", "order_kk"]
 PT_COLS = ["lat", "lng", "observed_on", "note_ru", "note_kk"]
 if not st.session_state.get(P + "init"):
     for f in FIELDS:
@@ -167,7 +173,7 @@ st.success(L("Режим редактирования. Измените нужн
              "Өңдеу режимі. Қажеттісін өзгертіп, беттің төменгі жағындағы «💾 Сақтау» батырмасын басыңыз."))
 
 # ---- 1. фото ----
-st.markdown(f"#### 🖼️ {L('Фото растения', 'Өсімдік суреті')}")
+st.markdown(f"#### 🖼️ {(L('Фото животного', 'Жануар суреті') if ANIMAL else L('Фото растения', 'Өсімдік суреті'))}")
 f1, f2 = st.columns([1, 2])
 upload = f2.file_uploader(L("Выбрать фото с компьютера (заменит текущее)", "Компьютерден сурет таңдау (қазіргіні ауыстырады)"),
                           type=["jpg", "jpeg", "png", "webp"], key=P + "upload")
@@ -286,6 +292,12 @@ with st.expander("🏷️ " + L("Названия, систематика, ка�
     a.text_input(L("Семейство (рус.)", "Тұқымдас (орыс.)"), key=P + "family_ru")
     b.text_input(L("Семейство (каз.)", "Тұқымдас (қаз.)"), key=P + "family_kk")
     c.text_input("Wikipedia (қаз.) URL", key=P + "wiki_kk_url")
+    if ANIMAL:
+        for base, lat, ru_l, kk_l in (("phylum", "phylum", "Тип", "Тип"), ("class", "class_lat", "Класс", "Класс"),
+                                      ("order", "order_lat", "Отряд", "Отряд")):
+            a.text_input(L(ru_l, kk_l) + " (лат.)", key=P + lat)
+            b.text_input(L(ru_l + " (рус.)", kk_l + " (орыс.)"), key=P + base + "_ru")
+            c.text_input(L(ru_l + " (каз.)", kk_l + " (қаз.)"), key=P + base + "_kk")
     if ranges:
         st.markdown(L("**Ареалы:**", "**Ареалдар:**"))
         for g in ranges:
