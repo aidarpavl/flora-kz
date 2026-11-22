@@ -5,6 +5,7 @@ import base64
 import io
 
 import folium
+import streamlit as st
 
 from lib import db, ui
 from lib.i18n import lang
@@ -60,9 +61,48 @@ def fam(r):
     return f"{loc} ({lat})" if loc and lat else (loc or lat or "—")
 
 
+def kingdom() -> str:
+    """Какой раздел открыт: растения ('plantae') или животные ('animalia'). Ставится в app.py по адресу страницы."""
+    return st.session_state.get("rb_kingdom", "plantae")
+
+
+def animal() -> bool:
+    return kingdom() == "animalia"
+
+
+def L(ru, kz):
+    return kz if kk() else ru
+
+
+def title() -> str:
+    if animal():
+        return L("Краснокнижные животные Казахстана", "Қазақстанның Қызыл кітабына енген жануарлар")
+    from lib.i18n import t
+    return t("rb_title")
+
+
+def icon() -> str:
+    return "🐾" if animal() else "🌺"
+
+
+def list_url() -> str:
+    return f"./{'redbook_animals' if animal() else 'redbook'}?lang={lang()}"
+
+
 def page_link(sid) -> str:
-    kind, name = ui.scope()
-    return f"./rb_species?id={int(sid)}&lang={lang()}"
+    return f"./{'rb_animal' if animal() else 'rb_species'}?id={int(sid)}&lang={lang()}"
+
+
+def tax_lines(r) -> str:
+    """Тип / класс / отряд (для животных) — строки markdown."""
+    out = []
+    for lab_ru, lab_kk, base, lat in (("Тип", "Тип", "phylum", "phylum"), ("Класс", "Класс", "class", "class_lat"),
+                                      ("Отряд", "Отряд", "order", "order_lat")):
+        loc = r.get(f"{base}_kk" if kk() else f"{base}_ru") or r.get(f"{base}_ru")
+        la = r.get(lat)
+        if loc or la:
+            out.append(f"**{L(lab_ru, lab_kk)}:** {loc or ''}{f' ({la})' if la and loc else (la or '')}")
+    return "  \n".join(out)
 
 
 def to_b64(upload):
