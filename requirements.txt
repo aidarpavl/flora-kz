@@ -5,3 +5,5 @@ requests>=2.31
 folium>=0.17
 streamlit-folium>=0.22
 Pillow>=10
+onnxruntime>=1.24
+numpy>=1.26
