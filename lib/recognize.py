@@ -1,5 +1,7 @@
 """Распознавание вида по фото.
 
+* Основной способ — собственный ИИ сайта (BioCLIP-2, см. lib/ai.py): без ключей и внешних служб.
+
 * Растения — Pl@ntNet API (бесплатно до 500 запросов в день). Секрет: PLANTNET_API_KEY
   (ключ: https://my.plantnet.org → регистрация → «Settings / API key»).
 * Животные и растения — iNaturalist Computer Vision. Секрет: INAT_API_TOKEN
@@ -24,7 +26,8 @@ def _secret(name: str) -> str:
 
 
 def available() -> dict:
-    return {"plants": bool(_secret("PLANTNET_API_KEY")), "animals": bool(_secret("INAT_API_TOKEN"))}
+    from lib import ai
+    return {"own": ai.ready(), "plants": bool(_secret("PLANTNET_API_KEY")), "animals": bool(_secret("INAT_API_TOKEN"))}
 
 
 def _jpeg(data: bytes, side: int = 1280) -> bytes:
@@ -82,8 +85,14 @@ def inat(data: bytes, lat: float | None = None, lng: float | None = None) -> lis
 
 
 def identify(data: bytes, what: str, lat=None, lng=None, lang: str = "ru") -> list[dict]:
-    """what: 'plant' | 'animal'. Возвращает до 5 вариантов, лучшие первыми."""
+    """what: 'plant' | 'animal' | 'any'. Возвращает до 5 вариантов, лучшие первыми.
+    Основной способ — собственный ИИ (lib/ai.py); ключи Pl@ntNet / iNaturalist не нужны (необязательная замена)."""
     av = available()
+    if av["own"]:
+        from lib import ai
+        r = ai.identify(data, {"plant": "plantae", "animal": "animalia"}.get(what))
+        st.session_state["rec_genus"] = (r.get("genus"), r.get("genus_score"))
+        return r["results"]
     if what == "plant" and av["plants"]:
         return plantnet(data, lang=lang)
     if av["animals"]:
