@@ -251,7 +251,7 @@ def parse_obs(o: dict, regions, zones) -> dict | None:
         "lat": round(lat, 5),
         "lng": round(lng, 5),
         "quality_grade": o.get("quality_grade"),
-        "user_login": (o.get("user") or {}).get("login"),
+        "user_login": None,   # логины авторов не храним — список наблюдателей ведётся только по участникам сайта
         "photo_url": photo,
         "uri": o.get("uri"),
         "region": region,
