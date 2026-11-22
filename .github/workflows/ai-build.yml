@@ -1,0 +1,40 @@
+name: AI model build (BioCLIP-2 for Kazakhstan species)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["tools/ai_build.py", "data/ai/redbook.tsv", ".github/workflows/ai-build.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
+          pip install open_clip_torch onnx onnxruntime numpy requests pillow huggingface_hub
+      - name: Build
+        run: python tools/ai_build.py
+      - name: Publish model to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view ai-model >/dev/null 2>&1 || gh release create ai-model --title "AI model (BioCLIP-2, int8)" --notes "Модель распознавания видов для сайта. Собирается автоматически."
+          gh release upload ai-model bioclip2_visual_int8.onnx --clobber
+      - name: Commit species list and embeddings
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/ai/species.json data/ai/text_emb.npy data/ai/config.json data/ai/report.json
+          git commit -m "AI: список видов Казахстана и эмбеддинги BioCLIP-2" || echo "nothing to commit"
+          git pull --rebase origin main
+          git push origin HEAD:main
