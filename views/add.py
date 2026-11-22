@@ -37,19 +37,20 @@ AV = recognize.available()
 for k in ("add_q", "add_free"):                       # результат распознавания подставляем до создания полей
     if k + "_pending" in st.session_state:
         st.session_state[k] = st.session_state.pop(k + "_pending")
-if AV["plants"] or AV["animals"]:
-    with st.expander("📷 " + ("Суреттен түрді анықтау" if KK else "Распознать вид по фото"), expanded=True):
+if AV["own"] or AV["plants"] or AV["animals"]:
+    with st.expander("🤖 " + ("Суреттен түрді анықтау (ЖИ)" if KK else "Распознать вид по фото (ИИ)"), expanded=True):
         r1, r2 = st.columns([2, 1])
         rec_photo = r1.file_uploader("Фото" if not KK else "Сурет", type=["jpg", "jpeg", "png", "webp"], key="rec_photo")
-        kinds = {"plant": "🌿 " + ("Өсімдік" if KK else "Растение"), "animal": "🐾 " + ("Жануар" if KK else "Животное")}
-        what = r2.radio("Кто на фото?" if not KK else "Суретте кім?",
-                        [k for k in kinds if (k == "plant" and AV["plants"]) or AV["animals"]],
-                        format_func=kinds.get, key="rec_what")
+        kinds = {"any": "❔ " + ("Білмеймін" if KK else "Не знаю"), "plant": "🌿 " + ("Өсімдік" if KK else "Растение"),
+                 "animal": "🐾 " + ("Жануар" if KK else "Животное")}
+        what = r2.radio("Кто на фото?" if not KK else "Суретте кім?", list(kinds), format_func=kinds.get, key="rec_what")
         if rec_photo:
             r1.image(rec_photo, width=260)
         if r2.button("🔍 " + ("Анықтау" if KK else "Распознать"), disabled=not rec_photo, type="primary", key="rec_go"):
             try:
-                with st.spinner("…"):
+                msg = ("ЖИ моделі жүктелуде (алғашқы рет ~1–2 мин)…" if KK else
+                       "Загружаю модель ИИ (первый раз ~1–2 мин), затем распознаю…")
+                with st.spinner(msg):
                     st.session_state["rec_res"] = recognize.identify(rec_photo.getvalue(), what, lat or None,
                                                                       lng or None, lang="ru")
             except Exception as e:
@@ -59,16 +60,39 @@ if AV["plants"] or AV["animals"]:
         if res == []:
             st.info("Түр анықталмады — басқа сурет қолданып көріңіз." if KK else
                     "Вид не определён — попробуйте другое, более чёткое фото.")
+        if res:
+            best = res[0]["score"]
+            gen, gsc = st.session_state.get("rec_genus") or (None, 0)
+            if best >= 0.6:
+                st.success(("Сенімді нәтиже" if KK else "Уверенный результат") + f": *{res[0]['latin']}* ({best * 100:.0f}%)")
+            elif gen and gsc >= 0.6:
+                st.warning(("Түр нақты емес, бірақ туысы анық: " if KK else "Вид неуверенно, но род определён надёжно: ")
+                           + f"*{gen}* ({gsc * 100:.0f}%). " + ("Төмендегі нұсқаларды тексеріңіз." if KK else
+                                                               "Сверьте варианты ниже."))
+            else:
+                st.warning("Нәтиже сенімсіз — басқа бұрыштан немесе жақыннан түсірілген сурет жүктеңіз." if KK else
+                           "Результат неуверенный — лучше загрузить фото крупнее или с другого ракурса "
+                           "(цветок, лист, всё животное целиком).")
         for i, x in enumerate(res or []):
             if not x.get("latin"):
                 continue
             rbm = [r for r in (db.safe("api_rb_list", [], p_q=x["latin"], p_kingdom=x["kingdom"]) or [])
                    if (r.get("latin") or "").lower() == x["latin"].lower()]
-            c_a, c_b = st.columns([4, 1])
-            line = f"**{x['score'] * 100:.0f}%** · *{x['latin']}*" + (f" — {x['common']}" if x.get("common") else "") \
-                   + (f" · {x['family']}" if x.get("family") else "")
+            loc = ""
             if rbm:
-                line += " · 🔴 " + ("Қызыл кітапта" if KK else "в Красной книге") + f" ({rbm[0].get('category') or '—'})"
+                loc = (rbm[0].get("name_kk") or rbm[0].get("name_ru")) if KK else rbm[0].get("name_ru")
+            elif x["kingdom"] == "plantae":
+                f = db.search_taxa(x["latin"])
+                if not f.empty:
+                    r0 = f.iloc[0]
+                    loc = (r0.get("common_name_kk") or r0.get("common_name_ru")) if KK else r0.get("common_name_ru")
+            c_a, c_b = st.columns([4, 1])
+            line = f"**{x['score'] * 100:.0f}%** · *{x['latin']}*" + (f" — {loc}" if isinstance(loc, str) and loc else
+                                                                       (f" — {x['common']}" if x.get("common") else "")) \
+                   + (f" · {x['family']}" if x.get("family") else "")
+            if rbm or x.get("redbook"):
+                line += " · 🔴 " + ("Қызыл кітапта" if KK else "в Красной книге") + (
+                    f" ({rbm[0].get('category')})" if rbm and rbm[0].get("category") else "")
             c_a.markdown(line)
             if c_b.button("✔ " + ("Таңдау" if KK else "Выбрать"), key=f"rec_pick_{i}"):
                 found = db.search_taxa(x["latin"])
@@ -77,9 +101,20 @@ if AV["plants"] or AV["animals"]:
                 else:
                     st.session_state["add_free_pending"] = x["latin"]
                 st.rerun()
-        st.caption(("Анықтау нәтижесі — ұсыныс қана; түрді өзіңіз тексеріңіз." if KK else
-                    "Результат распознавания — подсказка; проверьте вид сами.")
-                   + (" Pl@ntNet" if AV["plants"] else "") + (" · CV" if AV["animals"] else ""))
+        rep = {}
+        if AV["own"]:
+            from lib import ai
+            rep = (ai.report() or {}).get("accuracy") or {}
+        acc = ""
+        if rep.get("Plantae") and rep.get("Animalia"):
+            acc = (f" Тексеру: өсімдіктер — 1-орында {rep['Plantae']['top1']}%, алғашқы 5-те {rep['Plantae']['top5']}%; "
+                   f"жануарлар — {rep['Animalia']['top1']}% / {rep['Animalia']['top5']}%." if KK else
+                   f" Проверка на фото: растения — верно с 1-го варианта {rep['Plantae']['top1']}%, "
+                   f"в первых 5 — {rep['Plantae']['top5']}%; животные — {rep['Animalia']['top1']}% / "
+                   f"{rep['Animalia']['top5']}%.")
+        st.caption(("Сайттың өз ЖИ-і (BioCLIP-2), Қазақстанда тіркелген түрлер бойынша. Нәтиже — ұсыныс; түрді өзіңіз тексеріңіз."
+                    if KK else "Собственный ИИ сайта (BioCLIP-2), выбор среди видов, найденных в Казахстане. "
+                    "Результат — подсказка; окончательно вид подтверждает человек.") + acc)
 q = st.text_input(t("find_species"), key="add_q")
 taxon_id = None
 if q:
