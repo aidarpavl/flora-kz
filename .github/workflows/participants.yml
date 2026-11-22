@@ -1,0 +1,33 @@
+name: Участники сайта → GitHub (каждый час)
+
+on:
+  schedule:
+    - cron: "23 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Export participants
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY || secrets.SUPABASE_ANON_KEY }}
+        run: python tools/export_participants.py
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/site
+          git diff --cached --quiet && { echo "без изменений"; exit 0; }
+          git commit -m "Участники сайта: обновление списка"
+          git pull --rebase origin main
+          git push origin HEAD:main
