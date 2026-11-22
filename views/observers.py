@@ -12,6 +12,8 @@ if ui.empty_db_notice(s):
     st.stop()
 
 st.subheader(t("nav_observers"))
+st.caption("Сайтқа тіркелген және бақылау қосқан қатысушылар. Тізім жаңадан басталды." if lang() == "kk" else
+           "Участники, зарегистрированные на сайте и добавившие наблюдения. Список начат заново.")
 opts = [t("by_observations"), t("by_species")]
 sort_label = st.radio(t("sort_by"), opts, horizontal=True, key=f"obsr_sort_{lang()}")
 sort = "species" if sort_label == opts[1] else "observations"
@@ -20,19 +22,18 @@ key = f"obsr_page::{kind}:{name}:{sort}"
 page = st.session_state.get(key, 1)
 df, total = db.observers(kind, name, sort, PAGE, (page - 1) * PAGE)
 if df.empty:
-    st.info(t("no_data"))
+    st.info("Әзірге бақылаушылар жоқ — тіркеліп, алғашқы бақылауды қосыңыз." if lang() == "kk" else
+            "Пока нет наблюдателей — зарегистрируйтесь и добавьте первое наблюдение.")
 else:
     c_obs, c_sp = t("observations_n").capitalize(), t("c_species").capitalize()
     tb = pd.DataFrame({
         t("rank"): range((page - 1) * PAGE + 1, (page - 1) * PAGE + 1 + len(df)),
-        t("avatar"): df["icon"],
         t("observer"): df["user_login"],
         c_obs: df["observations"],
         c_sp: df["species"],
     })
     main = c_sp if sort == "species" else c_obs
     st.dataframe(tb, hide_index=True, use_container_width=True, height=700, column_config={
-        t("avatar"): st.column_config.ImageColumn(width="small"),
         main: st.column_config.ProgressColumn(format="%d", min_value=0, max_value=int(tb[main].max()))})
     pages = max(1, math.ceil(total / PAGE))
     n1, n2, n3 = st.columns([1, 2, 1])
@@ -44,7 +45,4 @@ else:
     if n3.button(t("next"), disabled=page >= pages, use_container_width=True):
         st.session_state[key] = page + 1
         st.rerun()
-    with st.expander(t("observer_map")):
-        who = st.selectbox(t("observer"), df["user_login"].tolist())
-        ui.observations_map(kind, name, user=who, mode="points", key="observer_map", height=450)
 ui.footer()
