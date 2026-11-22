@@ -42,7 +42,8 @@ def thumb_uri(sid: int, stamp: str):
 def catalog_img(r):
     if r.get("has_photo"):
         return thumb_uri(int(r["id"]), str(r.get("updated_at") or "")) or ui.PLACEHOLDER
-    return r.get("photo_url") or ui.PLACEHOLDER
+    u = r.get("photo_url")
+    return u if isinstance(u, str) and u else ui.PLACEHOLDER
 
 
 def sub(r):
@@ -88,7 +89,7 @@ with tab_cat:
                 f'<div class="badge" style="background:{cat_color(r.get("category"))}">{ui.esc(cat_label(r.get("category")))}'
                 f' · 📍{int(r["n_points"])} · ⬟{int(r["n_ranges"])}</div></div>'
                 f'<div class="b"><div class="cn">{ui.esc(nm(r))}</div><div class="sn">{ui.esc(r["latin"])}'
-                f'{" (" + ui.esc(r["parent_latin"]) + ")" if r.get("parent_latin") else ""}</div>'
+                f'{" (" + ui.esc(r["parent_latin"]) + ")" if isinstance(r.get("parent_latin"), str) and r.get("parent_latin") else ""}</div>'
                 f'<div class="sn" style="font-style:normal;color:#888">{ui.esc(sub(r))}</div></div></a></div>')
         st.markdown(f'<div class="grid">{"".join(parts)}</div>', unsafe_allow_html=True)
 
