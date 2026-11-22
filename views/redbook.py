@@ -50,7 +50,7 @@ def sub(r):
     if ANIMAL:
         c = (r.get("class_kk") or r.get("class_ru")) if KK else r.get("class_ru")
         o = (r.get("order_kk") or r.get("order_ru")) if KK else r.get("order_ru")
-        return " · ".join(x for x in (c, o, r.get("family")) if x) or "—"
+        return " · ".join(x for x in (c, o, r.get("family")) if isinstance(x, str) and x) or "—"
     return fam(r)
 
 
